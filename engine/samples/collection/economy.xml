@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>가상 경제 뉴스 — 로컬 개발 전용</title>
+    <link>https://example.com/</link>
+    <description>실제 뉴스가 아닌 연결 테스트용 RSS입니다.</description>
+    <item>
+      <title>가상 기사: 금리 설명 자료 공개</title>
+      <link>https://example.com/news/rate</link>
+      <pubDate>Sat, 17 Oct 2026 21:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>가상 기사: 경제 교육 행사 안내</title>
+      <link>https://example.com/news/economy</link>
+      <pubDate>Sat, 17 Oct 2026 22:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>같은 URL의 가상 중복 기사</title>
+      <link>https://example.com/news/rate#top</link>
+      <pubDate>Sat, 17 Oct 2026 21:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>날짜가 누락된 가상 기사</title>
+      <link>https://example.com/news/missing-date</link>
+    </item>
+  </channel>
+</rss>

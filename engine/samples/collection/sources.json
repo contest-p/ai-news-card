@@ -1,0 +1,15 @@
+{
+  "demo_only": true,
+  "sources": [
+    {
+      "source_id": "local_economy_fixture",
+      "category": "economy",
+      "fixture_verified": true,
+      "rss_file": "economy.xml",
+      "html_files": {
+        "https://example.com/news/rate": "rate.html",
+        "https://example.com/news/economy": "economy.html"
+      }
+    }
+  ]
+}

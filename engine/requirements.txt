@@ -1,0 +1,6 @@
+# Tested baseline; upgrade separately after verification.
+feedparser==6.0.12
+trafilatura==2.0.0
+python-dotenv==1.0.1
+# All transitive versions from the verified local environment.
+-r requirements-lock.txt
