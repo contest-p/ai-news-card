@@ -1,5 +1,3 @@
-# sources.py
-
 SOURCES = [
     {"name": "BBC 뉴스 (글로벌)", "url": "http://feeds.bbci.co.uk/news/rss.xml"},
     {"name": "SBS 뉴스 (정치)", "url": "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01&plink=RSSREADER"},
