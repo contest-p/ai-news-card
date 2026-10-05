@@ -23,6 +23,10 @@ TEMPLATE_VERSION = "engine-preview-v1"
 KST = timezone(timedelta(hours=9))
 
 
+def card_data_hash(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
 def validate_render_data(data):
     """표시 계약 검사. 원문 근거 검사는 생성 단계의 ready_for_review 결과를 사용."""
     fields(data, ("schema_version", "article_id", "title", "published_at", "card1", "card2", "sources", "ai_generated"))
@@ -142,6 +146,7 @@ def render_card(result, output_dir, *, font_path, node="node"):
         layouts.append(json.loads(process.stdout))
         images.append(str(png_path))
     output = {"template_version": TEMPLATE_VERSION, "template_status": "temporary_engine_preview",
+              "card_data_sha256": card_data_hash(data),
               "template_sha256": hashlib.sha256(TEMPLATE.read_bytes()).hexdigest(),
               "font": Path(font_path).name, "font_sha256": hashlib.sha256(font_bytes).hexdigest(),
               "image_files": images, "layout_result": layouts,

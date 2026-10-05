@@ -8,6 +8,20 @@
 
 ## 실제 RSS 수집·본문 확인
 
+### 카드 이미지 → 로컬 메일 미리보기·EML
+
+```powershell
+.\.venv\Scripts\python.exe -m engine.card_render
+.\.venv\Scripts\python.exe -m engine.mail_demo
+node engine/render_mail_preview.cjs .engine-local/live-card/mail
+```
+
+검사 완료 카드와 승인된 PNG로 HTML·일반 텍스트·CID 이미지 첨부가 포함된 `.eml`을 만듭니다. `mail_assembly.py`는 MIME 조립만 담당하며 SMTP·챗 API·DB를 호출하지 않습니다. 발신자·수신자는 `example.invalid` 표본이고 실제 피드백·구독 관리 주소는 아직 연결하지 않습니다.
+
+출력은 `.engine-local/live-card/mail/`의 `briefing.eml`, `preview.html`, `images-blocked.html`, `text-fallback.txt`, 보고서입니다. 현재 카드 데이터와 이미지 보고서의 hash가 다르거나 이미지 검사가 실패하면 해당 이미지를 붙이지 않고 전체 텍스트 설명을 유지합니다. 상세 구조와 확인 범위는 [메일 조립 안내](MAIL_PREVIEW.md)를 참고하세요.
+
+2026-10-05 실제 생성 카드 1의 메일은 PNG 1개, MIME 총 152,661 bytes로 생성됐습니다. Chrome의 800px/390px 폭에서 정상/이미지 차단 미리보기 4개를 확인했고 가로 넘침·외부 요청은 없었습니다. 전체 자동 테스트 124개 통과. 실제 Outlook/Gmail의 CID 표시·이미지 차단 동작은 발송 설정 후 별도 확인해야 합니다.
+
 ### 생성 카드 → 임시 템플릿 → 이미지
 
 프런트 담당자의 템플릿이 아직 저장소에 없어 `engine/templates/card_preview.html`에 엔진 검수용 임시 템플릿을 추가했습니다. 최종 프런트 디자인으로 확정한 것이 아닙니다. `card_render.py`는 완료된 생성 작업의 `result.json`을 받아 카드 1·선택적인 카드 2를 PNG로 변환합니다. 상세 설정과 검수 기록은 [카드 이미지 연결 안내](CARD_RENDER.md)를 참고하세요.
