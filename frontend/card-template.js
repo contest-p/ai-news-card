@@ -37,10 +37,13 @@ function validSource(source) {
 function sentenceMarkup(sentence, sources, cardNumber) {
   const source = sources.get(sentence.source_article_id);
   if (!source) throw new TypeError(`등록되지 않은 근거 기사: ${sentence.source_article_id}`);
+  const asOf = formatDate(sentence.as_of);
   const date = sentence.temporal_role === "past"
-    ? (formatDate(sentence.as_of) || formatDate(source.published_at))
+    ? (asOf || formatDate(source.published_at))
     : "";
-  const dateLabel = date ? `<span class="news-card-date">${safeText(date)} 기준</span>` : "";
+  const dateLabel = date
+    ? `<span class="news-card-date">${safeText(date)} ${asOf ? "기준" : "보도에 따르면"}</span>`
+    : "";
   return `<p class="news-card-sentence">${safeText(sentence.text)}${dateLabel}</p>`;
 }
 function oneCard(data, key, number, sources) {
