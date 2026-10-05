@@ -1,0 +1,22 @@
+[
+  {
+    "name": "SBS 뉴스 (정치)",
+    "status": "에러 ('category')"
+  },
+  {
+    "name": "MBC 뉴스 (경제)",
+    "status": "에러 ('category')"
+  },
+  {
+    "name": "매일경제 (전체)",
+    "status": "에러 ('category')"
+  },
+  {
+    "name": "경향신문 (IT/과학)",
+    "status": "에러 ('category')"
+  },
+  {
+    "name": "동아일보 (사회)",
+    "status": "에러 ('category')"
+  }
+]

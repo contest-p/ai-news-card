@@ -1,0 +1,26 @@
+[
+  {
+    "name": "BBC 뉴스 (글로벌)",
+    "status": "통과",
+    "article_count": 32,
+    "sample_category": "분류 없음"
+  },
+  {
+    "name": "SBS 뉴스 (정치)",
+    "status": "통과",
+    "article_count": 29,
+    "sample_category": "정치"
+  },
+  {
+    "name": "매일경제 (전체)",
+    "status": "통과",
+    "article_count": 50,
+    "sample_category": "헤드라인"
+  },
+  {
+    "name": "경향신문 (IT/과학)",
+    "status": "통과",
+    "article_count": 4,
+    "sample_category": "IT비즈·정책"
+  }
+]

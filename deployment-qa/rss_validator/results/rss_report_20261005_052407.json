@@ -1,0 +1,30 @@
+[
+  {
+    "name": "SBS 뉴스 (정치)",
+    "status": "통과",
+    "article_count": 29,
+    "sample_category": "정치"
+  },
+  {
+    "name": "MBC 뉴스 (경제)",
+    "status": "실패",
+    "reason": "파싱 실패"
+  },
+  {
+    "name": "매일경제 (전체)",
+    "status": "통과",
+    "article_count": 50,
+    "sample_category": "헤드라인"
+  },
+  {
+    "name": "경향신문 (IT/과학)",
+    "status": "통과",
+    "article_count": 4,
+    "sample_category": "IT비즈·정책"
+  },
+  {
+    "name": "동아일보 (사회)",
+    "status": "실패",
+    "reason": "기사 없음"
+  }
+]

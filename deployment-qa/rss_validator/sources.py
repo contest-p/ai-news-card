@@ -1,22 +1,8 @@
+# sources.py
+
 SOURCES = [
-    {
-        "name": "네이버 뉴스 - IT",
-        "url": "https://feeds.feedburner.com/naverNews",
-        "category": "IT"
-    },
-    {
-        "name": "YTN",
-        "url": "https://www.ytn.co.kr/rss/allnews.xml",
-        "category": "종합"
-    },
-    {
-        "name": "한겨레",
-        "url": "https://www.hani.co.kr/rss/",
-        "category": "종합"
-    },
-    {
-        "name": "BBC Korea",
-        "url": "https://feeds.bbci.co.uk/korean/rss.xml",
-        "category": "국제"
-    },
+    {"name": "BBC 뉴스 (글로벌)", "url": "http://feeds.bbci.co.uk/news/rss.xml"},
+    {"name": "SBS 뉴스 (정치)", "url": "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01&plink=RSSREADER"},
+    {"name": "매일경제 (전체)", "url": "https://www.mk.co.kr/rss/30000001/"},
+    {"name": "경향신문 (IT/과학)", "url": "https://www.khan.co.kr/rss/rssdata/it_news.xml"}
 ]
