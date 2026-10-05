@@ -39,6 +39,19 @@ node engine/render_mail_preview.cjs .engine-local/live-card/mail
 
 ## 다음 연결
 
+테스트 SMTP 연결 코드는 `engine/smtp_test.py`에 준비했다. `engine/.env`에 `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`(ssl/starttls), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TEST_TO`를 입력한다. 비밀번호는 채팅·Git에 올리지 않는다. 서비스별 앱 비밀번호/OAuth 지원은 발송 서비스가 정해진 뒤 확인한다. 현재 어댑터는 SMTP 사용자명·비밀번호 인증 방식이다.
+
+```powershell
+.\.venv\Scripts\python.exe -m engine.smtp_test --check
+.\.venv\Scripts\python.exe -m engine.smtp_test --send
+```
+
+`--check`는 인증만 확인하고 메일을 보내지 않는다. `--send`는 설정한 테스트 수신자 한 곳으로 실제 메일을 제출한다. 아직 발송 계정·수신자·인증 정보가 없어 실제 접속·발송은 수행하지 않았다.
+
+SSL 또는 STARTTLS와 인증서 검증을 사용하며 평문 전송은 지원하지 않는다. 동일 카드·발신자·수신자의 EML과 상태를 `.engine-local/smtp-test/`에 보관하고 다시 실행해도 성공 또는 불확실 상태는 재전송하지 않는다. 연결·인증 실패는 최대 2번까지만 시도할 수 있다. `smtp_accepted`는 서버 접수 확인이며 수신함 도착 확인이 아니다. `unknown`/`in_flight`이면 수신함·서버 결과를 확인하기 전 기록을 지우거나 재전송하지 않는다.
+
+연결 코드 추가 후 전체 테스트 128개 통과. 지정 테스트 수신자 한 명, Bcc 금지, 성공 후 재전송 방지, 전송 중 연결 끊김의 불확실 처리, 인증 실패 시 미제출·횟수 제한을 대역 서버로 확인했다. 실제 서비스의 인증·도착·메일 앱 표시는 아직 미검증이다.
+
 - 발송 계정과 테스트 수신자 설정.
 - 실제 메일 앱에서 CID 이미지·이미지 차단·모바일 표시 검증.
 - Backend가 제공하는 피드백 fragment 링크와 승인된 구독 관리 주소 연결.
