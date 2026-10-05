@@ -1,0 +1,69 @@
+{
+  "demo_only": true,
+  "work_date_kst": "2026-10-18",
+  "observed_at": "2026-10-18T08:07:00+09:00",
+  "current_article_id": "rag_current",
+  "expected_relevant_ids": ["past_bank_cost", "past_policy_rate"],
+  "articles": [
+    {
+      "article_id": "rag_current",
+      "url": "https://example.com/rag/current",
+      "title": "샘플: 기준금리 인하가 대출금리에 전달되는 과정",
+      "body": "실제 보도가 아닌 가상 연결 데이터입니다. 기준금리 인하 이후 은행의 자금 조달 비용과 대출금리가 어떤 관계를 갖는지 설명하는 자료가 공개됐다고 가정합니다. 은행은 예금금리와 시장금리, 조달 비용을 고려해 대출금리를 정하므로 정책금리와 대출금리가 항상 같은 폭으로 움직이는 것은 아닙니다.",
+      "category": "economy",
+      "published_at": "2026-10-17T23:30:00Z",
+      "source_verified": true,
+      "body_valid": true
+    },
+    {
+      "article_id": "past_bank_cost",
+      "url": "https://example.com/rag/past-bank-cost",
+      "title": "샘플: 은행의 조달 비용과 대출금리 책정",
+      "body": "실제 보도가 아닌 가상 배경 자료입니다. 은행의 대출금리는 예금과 금융시장에서 조달한 자금의 비용, 신용 위험과 업무 비용 등을 반영합니다. 기준금리가 내려가더라도 은행의 조달 비용 변화와 대출금리 반영 시점은 다를 수 있습니다. 정책금리와 시중 대출금리를 구분해서 설명합니다.",
+      "category": "economy",
+      "published_at": "2026-10-15T02:00:00Z",
+      "source_verified": true,
+      "body_valid": true
+    },
+    {
+      "article_id": "past_policy_rate",
+      "url": "https://example.com/rag/past-policy-rate",
+      "title": "샘플: 정책금리와 시중금리의 차이",
+      "body": "실제 보도가 아닌 가상 배경 자료입니다. 정책금리는 중앙은행의 통화정책 기준이며 예금금리와 대출금리는 은행의 자금 조달과 위험 평가를 통해 결정됩니다. 정책금리의 변화는 시장을 거쳐 은행의 자금 조달 비용에 영향을 줄 수 있고 고객에게 적용되는 대출금리까지 전달되는 데에는 시간이 걸릴 수 있습니다.",
+      "category": "economy",
+      "published_at": "2026-10-13T01:00:00Z",
+      "source_verified": true,
+      "body_valid": true
+    },
+    {
+      "article_id": "past_ticket_sales",
+      "url": "https://example.com/rag/past-tickets",
+      "title": "샘플: 지역 공연 입장권 판매 방식",
+      "body": "실제 보도가 아닌 가상 비교 자료입니다. 지역 공연의 입장권은 온라인 예약과 현장 구매 방식으로 판매됩니다. 주최 측은 좌석 배치와 입장 절차, 공연장 안내를 공개했다고 가정합니다. 판매된 좌석은 안내에 따라 확인하며 공연 프로그램과 관람 시간이 주요 내용입니다.",
+      "category": "economy",
+      "published_at": "2026-10-14T02:00:00Z",
+      "source_verified": true,
+      "body_valid": true
+    },
+    {
+      "article_id": "at_kst_midnight",
+      "url": "https://example.com/rag/midnight",
+      "title": "샘플: 금리 설명 자료의 당일 갱신",
+      "body": "가상 당일 기사입니다. 은행 조달 비용과 대출금리를 설명하지만 작업 날짜의 한국 시간 자정에 게시됐으므로 과거 기사 검색 대상에서 제외합니다.",
+      "category": "economy",
+      "published_at": "2026-10-17T15:00:00Z",
+      "source_verified": true,
+      "body_valid": true
+    },
+    {
+      "article_id": "future_article",
+      "url": "https://example.com/rag/future",
+      "title": "샘플: 미래 날짜의 금리 기사",
+      "body": "가상 오류 표본입니다. 금리와 은행 조달 비용을 설명하는 것처럼 보여도 미래 날짜이므로 과거 근거로 선택하면 안 됩니다.",
+      "category": "economy",
+      "published_at": "2026-10-20T00:00:00Z",
+      "source_verified": true,
+      "body_valid": true
+    }
+  ]
+}
