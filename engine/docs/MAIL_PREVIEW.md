@@ -6,8 +6,8 @@
 
 ```powershell
 .\.venv\Scripts\python.exe -m engine.card_render
-.\.venv\Scripts\python.exe -m engine.mail_demo
-node engine/render_mail_preview.cjs .engine-local/live-card/mail
+.\.venv\Scripts\python.exe -m engine.demos.mail_demo
+node engine/tools/render_mail_preview.cjs .engine-local/live-card/mail
 ```
 
 첫 명령은 현재 카드와 연결된 이미지 hash 보고서를 만든다. 기존 이미지 보고서에 카드 hash가 없으면 텍스트 전용으로 처리하므로 이전 렌더링 결과는 한 번 다시 생성한다.
@@ -42,8 +42,8 @@ node engine/render_mail_preview.cjs .engine-local/live-card/mail
 테스트 SMTP 연결 코드는 `engine/smtp_test.py`에 준비했다. `engine/.env`에 `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`(ssl/starttls), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TEST_TO`를 입력한다. 비밀번호는 채팅·Git에 올리지 않는다. 서비스별 앱 비밀번호/OAuth 지원은 발송 서비스가 정해진 뒤 확인한다. 현재 어댑터는 SMTP 사용자명·비밀번호 인증 방식이다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m engine.smtp_test --check
-.\.venv\Scripts\python.exe -m engine.smtp_test --send
+.\.venv\Scripts\python.exe -m engine.tools.smtp_test --check
+.\.venv\Scripts\python.exe -m engine.tools.smtp_test --send
 ```
 
 `--check`는 인증만 확인하고 메일을 보내지 않는다. `--send`는 설정한 테스트 수신자 한 곳으로 실제 메일을 제출한다. 아직 발송 계정·수신자·인증 정보가 없어 실제 접속·발송은 수행하지 않았다.

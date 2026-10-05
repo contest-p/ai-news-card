@@ -140,7 +140,7 @@ def render_card(result, output_dir, *, font_path, node="node"):
         html_path = output_dir / f"card{index}.html"
         png_path = output_dir / f"card{index}.png"
         html_path.write_text(build_html(data, index, font_bytes=font_bytes), encoding="utf-8")
-        process = subprocess.run([node, str(Path(__file__).with_name("render_card.cjs")),
+        process = subprocess.run([node, str(Path(__file__).parent / "tools" / "render_card.cjs"),
                                   str(html_path), str(png_path)], capture_output=True, text=True,
                                  encoding="utf-8", timeout=60, check=True)
         layouts.append(json.loads(process.stdout))

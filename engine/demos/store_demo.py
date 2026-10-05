@@ -1,4 +1,4 @@
-"""python -m engine.store_demo: 수집 → 샘플 저장 → 재저장 → 수정 → 선별."""
+"""python -m engine.demos.store_demo: 수집 → 샘플 저장 → 재저장 → 수정 → 선별."""
 
 from collections import Counter
 from dataclasses import replace
@@ -15,7 +15,7 @@ from engine.selection import DeliveryHistory, parse_timestamp, select_article
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
-    samples = Path(__file__).parent / "samples"
+    samples = Path(__file__).resolve().parents[1] / "samples"
     fixture = json.loads((samples / "selection.json").read_text("utf-8"))
     now = parse_timestamp(fixture["now"])
     collected = collect_local_samples(samples / "collection")

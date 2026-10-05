@@ -1,4 +1,4 @@
-"""python -m engine.demo: 외부 연결 없는 가상 데이터 시연."""
+"""python -m engine.demos.demo: 외부 연결 없는 가상 데이터 시연."""
 
 import argparse
 import json
@@ -13,7 +13,7 @@ def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="샘플 기사 선별 (메일 전송 없음)")
-    parser.add_argument("--sample", type=Path, default=Path(__file__).parent / "samples" / "selection.json")
+    parser.add_argument("--sample", type=Path, default=Path(__file__).resolve().parents[1] / "samples" / "selection.json")
     parser.add_argument("--no-keywords", action="store_true", help="키워드 없는 관심 분야 대체 확인")
     args = parser.parse_args()
     try:

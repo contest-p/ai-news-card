@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--invalid-background", action="store_true")
     args = parser.parse_args()
     try:
-        root = Path(__file__).parent / "samples"
+        root = Path(__file__).resolve().parents[1] / "samples"
         fixture = json.loads((root / "rag.json").read_text("utf-8"))
         sample = json.loads((root / "cards.json").read_text("utf-8"))
         if fixture.get("demo_only") is not True or sample.get("demo_only") is not True:

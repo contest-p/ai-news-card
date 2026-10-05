@@ -11,7 +11,7 @@ import unittest
 from engine.card_render import card_data_hash
 from engine.cards import assemble_cards
 from engine.mail_assembly import InlineImage, NewsMailData, assemble_mail
-from engine.mail_demo import approved_images
+from engine.demos.mail_demo import approved_images
 from engine.tests import test_cards
 
 PNG = b"\x89PNG\r\n\x1a\nlayout-test-only"

@@ -1,4 +1,4 @@
-"""python -m engine.rag_demo: 실제 로컬 임베딩으로 가상 과거 기사 검색."""
+"""python -m engine.demos.rag_demo: 실제 로컬 임베딩으로 가상 과거 기사 검색."""
 
 import argparse
 from datetime import date
@@ -21,7 +21,7 @@ def main() -> None:
     parser.add_argument("--min-score", type=float, default=0.85, help="합의 전 유사도 기준 제안값")
     args = parser.parse_args()
     try:
-        fixture = json.loads((Path(__file__).parent / "samples" / "rag.json").read_text("utf-8"))
+        fixture = json.loads((Path(__file__).resolve().parents[1] / "samples" / "rag.json").read_text("utf-8"))
         if fixture.get("demo_only") is not True:
             raise ValueError("가상 샘플만 사용할 수 있습니다.")
         work_date = date.fromisoformat(fixture["work_date_kst"])

@@ -7,7 +7,7 @@ DB 종류는 사용자가 Cloud Firestore로 확인했습니다. 이 문서는 �
 저장소 루트에서:
 
 ```powershell
-.\.venv\Scripts\python.exe -m engine.store_demo
+.\.venv\Scripts\python.exe -m engine.demos.store_demo
 .\.venv\Scripts\python.exe -m unittest discover -s engine/tests -v
 ```
 

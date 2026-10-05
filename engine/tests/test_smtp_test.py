@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from engine.generation import LocalGenerationStore
-from engine.smtp_test import SmtpSettings, send_once
+from engine.tools.smtp_test import SmtpSettings, send_once
 
 
 class FakeSmtp:

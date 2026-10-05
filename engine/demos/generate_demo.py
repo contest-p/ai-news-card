@@ -31,7 +31,7 @@ def main():
     parser.add_argument("--retry-blocked", action="store_true", help="HTTP 400 수정 후 남은 1회 수동 사용. 횟수 초기화 없음")
     args = parser.parse_args()
     try:
-        root = Path(__file__).parent / "samples"
+        root = Path(__file__).resolve().parents[1] / "samples"
         fixture = json.loads((root / "rag.json").read_text("utf-8"))
         sample = json.loads((root / "cards.json").read_text("utf-8"))
         if fixture.get("demo_only") is not True or sample.get("demo_only") is not True:

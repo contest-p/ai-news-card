@@ -1,6 +1,6 @@
 # 카드 JSON → 이미지 연결
 
-프런트의 최종 카드 템플릿은 아직 저장소에 없다. 이번 구현은 엔진 검수용 임시 템플릿으로, 같은 공통 카드 JSON(10-2)을 받아 추후 프런트 템플릿으로 교체할 수 있는 렌더링 경로다. Frontend 파일은 변경하지 않았다.
+프런트 템플릿은 `frontend/card-template.js`에 추가됐지만 엔진 렌더러에는 아직 연결되지 않았다. 이번 구현은 엔진 검수용 임시 템플릿으로, 같은 공통 카드 JSON(10-2)을 받아 추후 프런트 템플릿으로 교체할 수 있는 렌더링 경로다. Frontend 파일은 변경하지 않았다.
 
 ## 실행
 
@@ -47,7 +47,7 @@ npm ci --prefix engine
 레이아웃 표본은 API 없이 다시 실행할 수 있다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m engine.render_layout_check
+.\.venv\Scripts\python.exe -m engine.tools.render_layout_check
 ```
 
 전체 자동 테스트 118개 통과. HTML 주입 방지, 숨겨야 할 근거 필드, 최대 길이/초과 입력, 미등록 출처·위험 URL, 카드 2 생략, 과거 기준일·보도일 구분, 생성 캐시 재사용·수치 형식 보정을 검사했다. 다른 입력의 응답으로 실패 작업을 보정하는 것과 모든 문장을 제외한 빈 카드를 성공으로 처리하는 것도 차단했다.

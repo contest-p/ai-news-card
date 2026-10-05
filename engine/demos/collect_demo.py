@@ -1,4 +1,4 @@
-"""python -m engine.collect_demo: 로컬 RSS 수집 → 기사 선별 시연."""
+"""python -m engine.demos.collect_demo: 로컬 RSS 수집 → 기사 선별 시연."""
 
 import argparse
 from dataclasses import asdict
@@ -16,10 +16,10 @@ def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="로컬 RSS·HTML 수집 시연 (외부 호출 없음)")
-    parser.add_argument("--samples", type=Path, default=Path(__file__).parent / "samples" / "collection")
+    parser.add_argument("--samples", type=Path, default=Path(__file__).resolve().parents[1] / "samples" / "collection")
     args = parser.parse_args()
     try:
-        fixture = json.loads((Path(__file__).parent / "samples" / "selection.json").read_text("utf-8"))
+        fixture = json.loads((Path(__file__).resolve().parents[1] / "samples" / "selection.json").read_text("utf-8"))
         gateway = SampleEngineGateway({**fixture, "delivery_eligible_fixture": True})
         original = fixture["subscription_snapshot"]
         snapshot = gateway.get_subscription_snapshot(original["subscription_id"],

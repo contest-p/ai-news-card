@@ -19,7 +19,7 @@ from engine.rag import RagResult, past_cutoff
 from engine.selection import Article, CollectionUnavailable, parse_timestamp, select_article
 from engine.settings import load_chat_settings
 
-ROOT = Path(__file__).resolve().parents[1] / ".engine-local" / "live-card"
+ROOT = Path(__file__).resolve().parents[2] / ".engine-local" / "live-card"
 KST = timezone(timedelta(hours=9))
 
 

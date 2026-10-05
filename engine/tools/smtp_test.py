@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from engine.card_render import ROOT, card_data_hash
 from engine.generation import LocalGenerationStore
 from engine.mail_assembly import NewsMailData, assemble_mail, email_address
-from engine.mail_demo import approved_images
+from engine.demos.mail_demo import approved_images
 from engine.selection import parse_timestamp
 from engine.card_render import KST
 
@@ -34,7 +34,7 @@ class SmtpSettings:
 
 
 def load_smtp_settings():
-    load_dotenv(Path(__file__).with_name(".env"), override=False)
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
     names = ("SMTP_HOST", "SMTP_PORT", "SMTP_SECURITY", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_TEST_TO")
     values = {name: os.environ.get(name, "").strip() for name in names}
     if any(not value for value in values.values()):

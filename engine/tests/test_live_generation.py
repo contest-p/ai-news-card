@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 
 from engine.generation import LocalGenerationStore
-from engine.live_generate_demo import generate_from_input, prepare_input, write_preview, review_numeric_format, RecordingClient
+from engine.demos.live_generate_demo import generate_from_input, prepare_input, write_preview, review_numeric_format, RecordingClient
 from engine.selection import Article
 
 NOW = datetime(2026, 10, 5, 6, tzinfo=timezone.utc)
