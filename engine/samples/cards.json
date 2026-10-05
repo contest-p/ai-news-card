@@ -1,0 +1,31 @@
+{
+  "demo_only": true,
+  "publishers": {
+    "rag_current": "가상 현재 출처",
+    "past_bank_cost": "가상 과거 출처"
+  },
+  "draft": {
+    "card1": {
+      "sentences": [{
+        "text": "은행은 예금금리와 시장금리, 조달 비용을 고려해 대출금리를 정하므로 정책금리와 대출금리가 항상 같은 폭으로 움직이는 것은 아닙니다.",
+        "source_article_id": "rag_current",
+        "evidence_quote": "은행은 예금금리와 시장금리, 조달 비용을 고려해 대출금리를 정하므로 정책금리와 대출금리가 항상 같은 폭으로 움직이는 것은 아닙니다.",
+        "as_of": null,
+        "temporal_role": "current",
+        "numbers": []
+      }],
+      "terms": []
+    },
+    "card2": {
+      "sentences": [{
+        "text": "기준금리가 내려가더라도 은행의 조달 비용 변화와 대출금리 반영 시점은 다를 수 있습니다.",
+        "source_article_id": "past_bank_cost",
+        "evidence_quote": "기준금리가 내려가더라도 은행의 조달 비용 변화와 대출금리 반영 시점은 다를 수 있습니다.",
+        "as_of": null,
+        "temporal_role": "past",
+        "numbers": []
+      }],
+      "terms": []
+    }
+  }
+}
