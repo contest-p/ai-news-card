@@ -1,0 +1,42 @@
+[
+  {
+    "name": "연합뉴스 - 정치",
+    "category": "정치",
+    "status": "실패 (열리지 않음)",
+    "article_count": 0,
+    "sample_title": "없음",
+    "sample_date": "없음"
+  },
+  {
+    "name": "연합뉴스 - 경제",
+    "category": "경제",
+    "status": "실패 (열리지 않음)",
+    "article_count": 0,
+    "sample_title": "없음",
+    "sample_date": "없음"
+  },
+  {
+    "name": "연합뉴스 - 사회",
+    "category": "사회",
+    "status": "실패 (열리지 않음)",
+    "article_count": 0,
+    "sample_title": "없음",
+    "sample_date": "없음"
+  },
+  {
+    "name": "연합뉴스 - 국제",
+    "category": "국제",
+    "status": "실패 (열리지 않음)",
+    "article_count": 0,
+    "sample_title": "없음",
+    "sample_date": "없음"
+  },
+  {
+    "name": "연합뉴스 - IT/과학",
+    "category": "IT/과학",
+    "status": "실패 (열리지 않음)",
+    "article_count": 0,
+    "sample_title": "없음",
+    "sample_date": "없음"
+  }
+]

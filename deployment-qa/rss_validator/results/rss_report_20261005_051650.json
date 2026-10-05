@@ -1,0 +1,34 @@
+[
+  {
+    "name": "네이버 뉴스 - IT",
+    "category": "IT",
+    "status": "실패 (열리지 않음)",
+    "article_count": 0,
+    "sample_title": "없음",
+    "sample_date": "없음"
+  },
+  {
+    "name": "YTN",
+    "category": "종합",
+    "status": "실패 (열리지 않음)",
+    "article_count": 0,
+    "sample_title": "없음",
+    "sample_date": "없음"
+  },
+  {
+    "name": "한겨레",
+    "category": "종합",
+    "status": "실패 (열리지 않음)",
+    "article_count": 0,
+    "sample_title": "없음",
+    "sample_date": "없음"
+  },
+  {
+    "name": "BBC Korea",
+    "category": "국제",
+    "status": "통과",
+    "article_count": 21,
+    "sample_title": "'저 사람이 되고 싶다고 생각했다'…김윤아가 30년 가까이 음악을 이어올 수 있었던 이유",
+    "sample_date": "Mon, 05 Oct 2026 00:45:22 GMT"
+  }
+]
