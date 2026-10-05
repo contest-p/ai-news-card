@@ -2,5 +2,6 @@
 feedparser==6.0.12
 trafilatura==2.0.0
 python-dotenv==1.0.1
+google-cloud-firestore==2.21.0
 # All transitive versions from the verified local environment.
 -r requirements-lock.txt

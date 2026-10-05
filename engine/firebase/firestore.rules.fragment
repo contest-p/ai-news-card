@@ -1,0 +1,11 @@
+// 합의 전 엔진 컬렉션 규칙 조각. 전체 규칙을 이 파일로 교체하지 않는다.
+// DB 담당자가 기존 match /databases/{database}/documents 안에 통합·검증한다.
+match /engine_articles/{articleKey} {
+  allow read, write: if false;
+  match /versions/{versionId} {
+    allow read, write: if false;
+  }
+}
+match /engine_article_ids/{identityKey} {
+  allow read, write: if false;
+}

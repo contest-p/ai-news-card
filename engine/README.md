@@ -6,6 +6,18 @@
 
 첫 구현은 **FR-10 관심 뉴스 선별**과 선별 단계의 **FR-09 URL 반복 제외**입니다. 검증된 RSS 목록과 DB가 아직 없어 가상 기사와 공통 10-1 형식의 샘플 구독으로 시작합니다. 첫 선별 시연은 Python 표준 라이브러리만 사용하여 추가 패키지·API 키 없이 실행합니다. 다음 단계로 feedparser·trafilatura를 사용하는 로컬 RSS·HTML 수집 시연을 추가했습니다. 외부 뉴스 수집·DB 중복 저장·RAG·AI·메일 전송은 아직 구현하지 않았습니다.
 
+## 세 번째 기능: 기사 저장·URL 중복 방지·내용 버전
+
+DB는 사용자의 최신 결정에 따라 **Cloud Firestore**로 개발합니다. [DB 변경 기록](firebase/DB_CHANGE.md)에 공통 PRD와의 차이를 기록했습니다. 공통 원문·구독·발송 정책은 변경하지 않았습니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m engine.store_demo
+```
+
+현재 시연은 메모리 샘플 저장소를 사용합니다. 최초 2개 저장 → 동일 기사 재저장 2개 unchanged → 본문 수정 시 버전 2 → 이전 본문 보존 → 오래된 관측은 stale → 저장 기사에서 선별까지 확인합니다. 프로그램 종료 후에는 데이터가 사라집니다. Firestore 프로젝트에 아직 연결하지 않았습니다.
+
+실제 연결용 Firestore 어댑터도 작성했고 총 48개 테스트가 통과했습니다. 새 환경에서는 `python -m pip install -r engine/requirements.txt`로 SDK를 포함한 의존성을 설치합니다. [Firestore 문서 구조·어댑터 안내](firebase/README.md)에 기술 구조를 설명했습니다. FR-08 중 저장·내용 버전 부분이며 임베딩 생성·RAG는 아직 구현하지 않았습니다.
+
 ## 두 번째 기능: 로컬 RSS 수집 → 선별
 
 현재 이 PC에는 프로젝트 전용 `.venv`를 만들고 필요한 패키지를 설치했습니다. 터미널에서 활성화하지 않고 다음 명령으로 실행할 수 있습니다.
@@ -56,7 +68,7 @@ settings.py는 후속 연결용 설정 로더만 제공합니다. 실제 호출 
 - `get_subscription_snapshot(subscription_id, scheduled_date_kst) → 공통 10-1 dict`
 - `check_delivery_eligibility(subscription_id, now) → bool`
 
-함수명은 공통 10-3을 따르고 인자·반환 타입은 **고승희 확인 전 제안**입니다. 실제 연결은 Backend와 합의한 보호된 API 또는 DB 접근 어댑터로 교체합니다. 현재 샘플 함수는 권한·해제·삭제 여부를 실제 확인하지 않으므로 운영 발송에 사용할 수 없습니다. 피드백 토큰은 이번 범위에 포함하지 않았습니다.
+함수명은 공통 10-3을 따르고 인자·반환 타입은 **합의 전 제안**입니다. 실제 연결은 보호된 API 또는 DB 접근 어댑터를 사용하는 설계입니다. 현재 샘플 함수는 권한·해제·삭제 여부를 실제 확인하지 않으므로 운영 발송에 사용할 수 없습니다. 피드백 토큰은 이번 범위에 포함하지 않았습니다.
 
 운영 연결에서도 조회 실패를 빈 구독·발송 가능 true로 바꾸지 않고 오류로 처리해야 합니다. 무료 계정의 한도·접근 권한은 실제 배포 때 확인합니다. 이 로컬 함수 연결에는 별도 서버·서비스 비용이 발생하지 않습니다.
 
@@ -98,19 +110,19 @@ py -3 -m unittest discover -s engine/tests -v
 
 ## 연결 규격 — 팀 합의 전 제안
 
-공통 PRD 10절은 합의 전 초안입니다. 샘플의 `contract_version: 1.0`은 공통 문서의 예시와 맞춘 값이며 팀이 계약을 확정했다는 뜻이 아닙니다. 이 단계의 추가 규격은 `engine/` 안에 두고 확인 후 공유 계약 위치로 옮깁니다.
+공통 PRD 10절은 합의 전 초안입니다. 샘플의 `contract_version: 1.0`은 공통 문서의 예시와 맞춘 값이며 팀이 계약을 확정했다는 뜻이 아닙니다. 이 단계의 추가 규격은 `engine/` 안에 있는 개발용 제안입니다.
 
-| 입력·출력 | 현재 규격 | 확인 대상 |
-|---|---|---|
-| 구독 입력 | 공통 10-1의 전체 `subscription_snapshot`; 선별은 status/timezone/scheduled_at/deadline_at/categories/keywords 사용 | 고승희 |
-| 기사 입력 (제안) | `Article`: article_id, url, title, body, category, published_at, source_verified, body_valid | 박경연·윤지민 |
-| 이력 입력 (제안) | `DeliveryHistory`: url, status, attempted_at. 해당 사용자의 모든 구독에 걸친 최근 7일 sent/unknown 포함 | 박경연·고승희 |
-| 출력 (제안) | selected/no_candidates/ineligible, 선택된 Article 또는 null, selection_reason 또는 null | 박경연·고승희 |
-| 선택 이유 | 공통 10-6의 type/label/matched_keyword 또는 category | 박경연·메일 조립 |
+| 입력·출력 | 현재 규격 |
+|---|---|
+| 구독 입력 | 공통 10-1의 전체 `subscription_snapshot`; 선별은 status/timezone/scheduled_at/deadline_at/categories/keywords 사용 |
+| 기사 입력 (제안) | `Article`: article_id, url, title, body, category, published_at, source_verified, body_valid |
+| 이력 입력 (제안) | `DeliveryHistory`: url, status, attempted_at. 해당 사용자의 모든 구독에 걸친 최근 7일 sent/unknown 포함 |
+| 출력 (제안) | selected/no_candidates/ineligible, 선택된 Article 또는 null, selection_reason 또는 null |
+| 선택 이유 | 공통 10-6의 type/label/matched_keyword 또는 category |
 
 Python 호출은 `select_article(snapshot, articles, history, now=..., collection_succeeded=...)`입니다. 시간은 timezone-aware datetime, JSON에서는 UTC 또는 offset이 있는 ISO 8601입니다. `history`는 필수이며 DB 조회 실패를 빈 목록으로 바꾸면 안 됩니다. 입력 오류는 예외로 전달하고 성공으로 표시하지 않습니다.
 
-팀 확인이 필요한 세부 제안:
+현재 구현의 세부 규칙 — 합의 전 제안:
 
 - 키워드는 관심 분야 안에서만 우선하고, NFKC·대소문자 정리 후 제목+본문 부분 문자열로 OR 매칭합니다. 키워드 개수로 점수를 더하지 않습니다. 매칭 이유는 입력 순서의 첫 일치 키워드입니다. 최종 키워드 정리는 Backend 담당이며 엔진은 저장된 값을 받습니다.
 - 24시간의 하한은 포함하고 예정 시각과 동일한 게시 시각은 제외합니다. 7일 이력은 하한을 포함하며 attempted_at은 sent/unknown 발생 시각으로 연결합니다.
@@ -122,7 +134,7 @@ Python 호출은 `select_article(snapshot, articles, history, now=..., collectio
 
 ## 다음 작은 기능
 
-로컬 RSS·본문 수집과 선별은 연결했습니다. 다음은 기사 저장·URL 유일성·내용 버전의 DB 코드 제안입니다. 기사 DB와 발송 DB 코드는 박경연이 작성하고 고승희의 리뷰·전체 마이그레이션 통합으로 진행합니다. 윤지민이 검증한 소스 목록이 준비되면 시간·용량 제한을 적용한 실제 HTTP 수집 어댑터를 추가합니다.
+로컬 RSS 수집·샘플 저장·선별은 연결했습니다. 다음은 과거 기사 샘플과 multilingual-e5-small 임베딩·RAG 연결입니다. Firestore 실제 연결·권한·보관 정책은 미검증입니다. 검증된 소스 목록 기반의 실제 HTTP 수집 어댑터도 후속 개발 범위입니다.
 
 ## 두 번째 기능 확인 결과 — 2026-10-05 KST
 
