@@ -2,7 +2,8 @@
   "demo_only": true,
   "publishers": {
     "rag_current": "가상 현재 출처",
-    "past_bank_cost": "가상 과거 출처"
+    "past_bank_cost": "가상 과거 출처",
+    "past_policy_rate": "가상 정책금리 출처"
   },
   "draft": {
     "card1": {

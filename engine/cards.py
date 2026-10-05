@@ -11,6 +11,9 @@ from engine.rag import RagResult, past_cutoff
 
 NUMBER = re.compile(r"[+-]?\d+(?:,\d{3})*(?:\.\d+)?")
 UNIT = re.compile(r"(?:%p|%|억원|만원|만명|억명|명|원|개|건|회|배|년|월|일|시간|분|초)")
+REVIEW_VALIDATOR_VERSION = "extractive-review-v2-term-fragments"
+# 문장 전체의 의미 판정이 아닌, 명백한 접속형 종결을 거르는 품질 제안.
+INCOMPLETE_TERM_END = re.compile(r"(?:하므로|이므로|으므로|하지만|했지만|하며|으며|하는데|했는데|하고|해서)$")
 
 
 class CardInvalid(ValueError):
@@ -140,12 +143,21 @@ def assemble_cards(draft, current: StoredArticle, rag: RagResult, *, publishers:
     issues = []
     try:
         fields(draft, ("card1", "card2"))
+        draft = copy.deepcopy(draft)
         article, digest = prepare_article(current.article)
         if digest != current.content_hash:
             raise CardInvalid("CURRENT_CONTENT_CHANGED")
         title = string(article.title, 60)
         current_sources = {article.article_id: current}
         validate_card(draft["card1"], current_sources, article.article_id, background=False)
+        retained = []
+        for term in draft["card1"]["terms"]:
+            ending = normalized(term["definition"]).strip().rstrip(".,!?…\"'”’")
+            if INCOMPLETE_TERM_END.search(ending):
+                issues.append("TERM_OMITTED:INCOMPLETE_DEFINITION")
+            else:
+                retained.append(term)
+        draft["card1"]["terms"] = retained
     except (CardInvalid, ValueError, TypeError, KeyError, AttributeError) as exc:
         return CardResult("failed", None, ("CARD1:" + getattr(exc, "code", "INPUT_INVALID"),))
 

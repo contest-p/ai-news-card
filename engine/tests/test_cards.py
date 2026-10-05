@@ -162,6 +162,26 @@ class CardTests(unittest.TestCase):
         self.assertEqual(payload["current"]["body"], self.current.article.body)
         self.assertEqual(len(payload["past"]), 1)
 
+    def test_fragment_term_is_omitted_without_changing_source_or_cards(self):
+        self.current_body("은행은 대출금리를 정하므로 정책금리를 확인합니다.")
+        term = {"term": "대출금리", "definition": "은행은 대출금리를 정하므로",
+                "source_article_id": "current", "evidence_quote": "은행은 대출금리를 정하므로"}
+        self.draft["card1"]["terms"] = [term]
+        before = copy.deepcopy(self.draft)
+        result = self.result()
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.card_data["card1"]["terms"], [])
+        self.assertIn("TERM_OMITTED:INCOMPLETE_DEFINITION", result.issues)
+        self.assertEqual(result.card_data["card1"]["sentences"], before["card1"]["sentences"])
+        self.assertEqual(self.draft, before)
+
+    def test_complete_source_definition_is_retained(self):
+        self.current_body("대출금리는 대출에 적용되는 금리입니다.")
+        term = {"term": "대출금리", "definition": self.current.article.body,
+                "source_article_id": "current", "evidence_quote": self.current.article.body}
+        self.draft["card1"]["terms"] = [term]
+        self.assertEqual(self.result().card_data["card1"]["terms"], [term])
+
 
 if __name__ == "__main__":
     unittest.main()
