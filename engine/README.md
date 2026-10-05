@@ -4,7 +4,59 @@
 
 담당 범위는 수집·기사 저장·중복 방지 → 관심 뉴스 선별 → 과거 기사 RAG → AI 카드 생성·근거 검사 → 김현서의 템플릿을 이용한 이미지 변환 → 메일 조립·발송 → 발송 상태·재실행·정리 연결입니다.
 
-첫 구현은 **FR-10 관심 뉴스 선별**과 선별 단계의 **FR-09 URL 반복 제외**입니다. 검증된 RSS 목록과 DB가 아직 없어 가상 기사와 공통 10-1 형식의 샘플 구독으로 시작합니다. 첫 선별 시연은 Python 표준 라이브러리만 사용하여 추가 패키지·API 키 없이 실행합니다. 다음 단계로 feedparser·trafilatura를 사용하는 로컬 RSS·HTML 수집 시연을 추가했습니다. 외부 뉴스 수집·DB 중복 저장·RAG·AI·메일 전송은 아직 구현하지 않았습니다.
+첫 구현은 **FR-10 관심 뉴스 선별**과 선별 단계의 **FR-09 URL 반복 제외**입니다. 검증된 RSS 목록과 DB가 아직 없어 가상 기사와 공통 10-1 형식의 샘플 구독으로 시작합니다. 로컬 RSS·HTML 수집, 기사 저장·내용 버전, 로컬 과거 기사 임베딩·RAG까지 추가했습니다. 외부 뉴스 수집·Firestore 실제 연결·AI 카드 생성·메일 전송은 아직 구현하지 않았습니다.
+
+## 다섯 번째 기능: 카드 설명 조립·자동 검사 (로컬 샘플)
+
+현재 기사와 실제 로컬 RAG 검색 결과를 연결하고, 저장된 가상 챗 응답을 공통 10-2 카드 JSON으로 검사·조립합니다. 아직 코디세이 API를 호출하거나 새로운 AI 설명을 생성하지 않습니다. `response_source: local_fixture`로 구분합니다. 공통 샘플 카드의 `ai_generated: true`는 향후 템플릿 연결을 위한 표시이며 이 시연에서 AI 호출이 있었다는 뜻이 아닙니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m engine.card_demo
+.\.venv\Scripts\python.exe -m engine.card_demo --no-past
+.\.venv\Scripts\python.exe -m engine.card_demo --invalid-background
+```
+
+현재 PC에서는 추가 설치 없이 실행합니다. 다른 PC는 위 RAG 패키지·모델 준비 명령이 필요합니다. 첫 명령은 `status: ready_for_review`와 카드 2장, 두 번째는 카드 1만 있고 `card2: null`, 세 번째는 잘못된 배경 설명을 제외하고 카드 1만 남습니다. 세 번째의 `CARD2_OMITTED:...`는 의도적인 실패 표본입니다. `human_review_required: true`이며 실제 이미지·메일·DB 저장은 하지 않습니다.
+
+`cards.py`는 제목 60자, 카드별 설명 합계 400자, 카드 1 용어 최대 2개·각 풀이 100자를 검사합니다. 길이는 공통 P-21 초안의 NFKC 정규화 후 code point 수를 따르며 초과 문장을 임의로 자르지 않습니다. 카드 1 검사가 실패하면 `failed`와 `card_data: null`입니다. 카드 2 실패는 이유를 기록하고 생략합니다.
+
+출처 ID·원문 구절·현재/과거 역할·내용 hash·과거 게시 시각을 검사합니다. URL·출처명·제목·게시일은 엔진이 가진 기사와 소스 메타데이터에서 채웁니다. 샘플 출처명도 가상 데이터입니다. LLM이 출처 URL을 만들어 전달하는 필드는 허용하지 않습니다. 사실 기준일 `as_of`는 YYYY-MM-DD가 근거 구절에 명시된 경우만 허용하는 **보수적 제안**이며 확인되지 않으면 null입니다. null인 과거 문장은 템플릿에서 근거 보도일을 표시해야 합니다.
+
+이번 검사 방식은 **원문 연속 발췌만 허용하는 제안**입니다. 자유 요약은 `PARAPHRASE_REQUIRES_SEMANTIC_REVIEW`로 거부합니다. 문자 일치만으로 수치·대상 관계, 사건 시점, 사실성·배경 유용성을 완전히 검증할 수 없으므로 통과 상태를 발송 가능으로 사용하면 안 됩니다. 사람의 검수 기록·자유 요약 의미 검사·실제 뉴스 표본 평가는 후속 범위입니다.
+
+수치 메타데이터는 문자열 surface, unit, subject, as_of, source_article_id, evidence_quote를 사용합니다. 서양식 숫자·부호·소수·천 단위 쉼표와 인접 단위(%/%p/억원/만원/만명/억명/명/원/개/건/회/배/년/월/일/시간/분/초)를 검사하는 **지원 타입 제안**입니다. 대상·단위·수치가 같은 원문 구절에 있는지 확인하지만 대상과 숫자의 의미 관계까지 증명하지 않습니다. 한국어로 풀어 쓴 숫자·복잡한 표·범위·환산은 별도 지원·검수가 필요합니다. 용어 풀이의 수치는 이번 단계에서 거부합니다.
+
+`card_prompt.py`는 후속 연결용 system/user 메시지를 만들며 기사 본문을 외부 데이터로 분리합니다. 프롬프트 분리만으로 모든 지시 주입을 막는다고 주장하지 않습니다. 현재는 실제 생성 호출이 0회이므로 자동 재시도도 없습니다. 실제 API 연결 때 P-13의 영속적인 작업별 총 2회 제한, P-14의 60초 제한을 먼저 구현해야 합니다. 이번 로컬 검사로 FR-12 전체가 완료된 것은 아닙니다.
+
+확인 결과: 자동 테스트 75개 통과. 기존 59개에 카드 검사 16개를 추가했고 로컬 RAG+카드 시연 3가지(2장/과거 없음/잘못된 배경)를 확인했습니다. 수신자·선택 이유·피드백 토큰은 카드 데이터에 넣지 않습니다.
+
+## 네 번째 기능: 로컬 과거 기사 임베딩·RAG
+
+현재 PC에는 CPU 패키지와 고정 버전 모델 다운로드를 완료했습니다. API 키 없이 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m engine.rag_demo
+.\.venv\Scripts\python.exe -m engine.rag_demo --no-past
+```
+
+첫 명령은 `status: ready`, `usable_article_ids`에 `past_bank_cost`, `past_policy_rate` 2개가 나옵니다. 무관한 공연 기사는 유사도 제안 기준을 넘지 못해 사용하지 않습니다. 두 번째 명령은 `status: no_evidence`, `background_candidates_available: false`입니다. 근거 없음은 정상 결과이며 후속 생성기는 이때 과거 배경 카드 2를 만들면 안 됩니다. `embedding_failed`는 근거 없음과 구분되는 오류이며 시연은 종료 코드 1을 반환합니다.
+
+다른 PC의 최초 준비는 다음과 같습니다. 패키지·모델 설치에 인터넷과 디스크 공간이 필요합니다. 이후 기본 시연은 캐시만 읽습니다. 모델 캐시는 Git에서 제외된 `.venv/model-cache`에 저장합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r engine/requirements-rag.txt
+.\.venv\Scripts\python.exe -m engine.rag_demo --download-model
+```
+
+`embeddings.py`는 공통 PRD의 `intfloat/multilingual-e5-small`, 384차원, 정규화·cosine 규격을 사용합니다. 공개 모델 revision `614241f622f53c4eeff9890bdc4f31cfecc418b3`을 고정하고 CPU에서 실행합니다. 질의에는 `query: `, 기사에는 `passage: ` 접두어를 붙이고 제목+본문 앞부분을 최대 512 토큰으로 처리합니다. [모델 공식 설명](https://huggingface.co/intfloat/multilingual-e5-small)
+
+`rag.py`는 작업일 KST 자정 **이전** 기사만 검색하고 현재 기사 URL·ID를 제외합니다. 최대 5개 검색하고 최대 3개를 근거로 제공합니다. 내용 hash·버전·모델 revision이 일치하는 정상 임베딩만 사용합니다. 원문·URL·게시 시각·내용 버전이 포함된 `evidence_context`는 후속 카드 생성용 입력이며 아직 외부 API 계약이 아닙니다. 게시 시각을 사건 발생일로 해석하지 않습니다.
+
+유사도 최소 `0.85`와 동일 분야 제한은 **합의 전 제안**입니다. `--min-score`로 시험할 수 있습니다. 이번 가상 샘플에서만 관련성 구분을 확인했으며 운영 뉴스의 품질을 보장하는 기준이 아닙니다. 유사도는 사실 정확도의 확률이 아닙니다.
+
+기사와 임베딩은 현재 실행 중 메모리에서 연결합니다. Firestore의 임베딩 저장·검색 연결, 실제 기사 품질 검증, 챗 API·카드 생성·발송은 후속 범위입니다. `StoredArticle.embedding_status`는 영구 저장 상태이므로 이 시연의 별도 `ArticleEmbedding.status`와 구분합니다. 데모는 Firestore 필드를 변경하지 않습니다.
+
+확인 결과: 자동 테스트 59개 통과. 실제 로컬 모델 검색에서 관련 기사 2개 사용, 무관 기사 제외, KST 자정·미래 기사 제외, 과거 기사 없는 실행의 빈 근거를 확인했습니다. 자동 테스트는 버전·hash·모델 불일치, 잘못된 벡터, 일부 임베딩 실패, 검색 5개·사용 3개 제한을 추가 검증합니다. 정책 테스트의 벡터는 테스트 대역이고 시연은 실제 모델을 사용합니다.
 
 ## 세 번째 기능: 기사 저장·URL 중복 방지·내용 버전
 
@@ -16,7 +68,7 @@ DB는 사용자의 최신 결정에 따라 **Cloud Firestore**로 개발합니�
 
 현재 시연은 메모리 샘플 저장소를 사용합니다. 최초 2개 저장 → 동일 기사 재저장 2개 unchanged → 본문 수정 시 버전 2 → 이전 본문 보존 → 오래된 관측은 stale → 저장 기사에서 선별까지 확인합니다. 프로그램 종료 후에는 데이터가 사라집니다. Firestore 프로젝트에 아직 연결하지 않았습니다.
 
-실제 연결용 Firestore 어댑터도 작성했고 총 48개 테스트가 통과했습니다. 새 환경에서는 `python -m pip install -r engine/requirements.txt`로 SDK를 포함한 의존성을 설치합니다. [Firestore 문서 구조·어댑터 안내](firebase/README.md)에 기술 구조를 설명했습니다. FR-08 중 저장·내용 버전 부분이며 임베딩 생성·RAG는 아직 구현하지 않았습니다.
+실제 연결용 Firestore 어댑터도 작성했고 당시 총 48개 테스트가 통과했습니다. 새 환경에서는 `python -m pip install -r engine/requirements.txt`로 SDK를 포함한 의존성을 설치합니다. [Firestore 문서 구조·어댑터 안내](firebase/README.md)에 기술 구조를 설명했습니다. FR-08 중 저장·내용 버전 부분이며 Firestore 임베딩 저장 연결은 후속 범위입니다.
 
 ## 두 번째 기능: 로컬 RSS 수집 → 선별
 
@@ -134,7 +186,7 @@ Python 호출은 `select_article(snapshot, articles, history, now=..., collectio
 
 ## 다음 작은 기능
 
-로컬 RSS 수집·샘플 저장·선별은 연결했습니다. 다음은 과거 기사 샘플과 multilingual-e5-small 임베딩·RAG 연결입니다. Firestore 실제 연결·권한·보관 정책은 미검증입니다. 검증된 소스 목록 기반의 실제 HTTP 수집 어댑터도 후속 개발 범위입니다.
+로컬 RSS 수집·샘플 저장·선별·과거 기사 RAG·카드 샘플 검사는 연결했습니다. 다음은 작업별 생성 횟수 기록과 코디세이 챗 API 연결입니다. Firestore 실제 연결·권한·보관 정책은 미검증입니다. 검증된 소스 목록 기반의 실제 HTTP 수집 어댑터도 후속 개발 범위입니다.
 
 ## 두 번째 기능 확인 결과 — 2026-10-05 KST
 
