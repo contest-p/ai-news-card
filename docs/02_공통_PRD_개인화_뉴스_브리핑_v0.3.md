@@ -1,7 +1,7 @@
 # 공통 PRD — 한눈에 읽는 개인화 뉴스 브리핑
 
-- Version: 0.3
-- 작성·수정일: 2026-10-04 (KST)
+- Version: 0.4
+- 작성·수정일: 2026-10-05 (KST)
 - 문서 담당: 박경연 — 리드
 - 단계: 공통 정책 정리 완료 / 연결 규격·측정 목표는 팀 합의 전 초안
 - 대상: 리드·핵심 엔진, Backend·DB, Frontend, 배포·QA·데이터 검증
@@ -33,8 +33,8 @@
 | 문서 | 작성 담당 | 범위 |
 |---|---|---|
 | 공통 PRD — 본 문서 | 리드 초안·전원 검토 | 사용자 가치, 범위, 공통 정책, 요구사항, 연결 계약, 출시 기준 |
-| 핵심 엔진 명세 — 후속 작성 | 리드 | 수집·선별·RAG·생성·검증·렌더링·발송, SQL 선점·상태 전이 |
-| Backend·DB 명세 — 후속 작성 | Backend | DB·마이그레이션·RLS·API·구독·개인정보 처리 |
+| 핵심 엔진 명세 — 후속 작성 | 리드 | 수집·선별·RAG·생성·검증·렌더링·발송, Firestore 트랜잭션 선점·상태 전이 |
+| Backend·DB 명세 — 후속 작성 | Backend | DB·스키마/인덱스 변경·IAM/Security Rules·API·구독·개인정보 처리 |
 | Frontend 명세 — 후속 작성 | Frontend | 화면·로그인·입력·API 연동·카드 템플릿 |
 | 배포·QA 명세 — 후속 작성 | 배포·QA | 환경·권한·배포·복구·데이터 검증·통합/사용자 테스트 |
 | 별도 마일스톤 계획 | 리드 취합·전원 합의 | 첫 통합·공개 테스트·종료·평가의 목표일·완료 기준; 세부 일정은 팀 관리 |
@@ -56,6 +56,7 @@
 | v0.2 | 2026-10-04 | 구독 기간 1·2·4주 유지, FR/NFR 고정 번호, 문서 우선순위·합의/검증 분리, 연결 계약·완료 기준·역할·운영 종료 계획 보강 |
 | v0.2 수정 | 2026-10-04 | 일정표·날짜별 마일스톤·재점검 목표일 제거. 작업 일정은 팀이 별도로 조율하며 구독·운영 정책은 유지 |
 | v0.3 | 2026-10-04 | 별도 마일스톤 문서 연결, 메일 본문·조립 규격 10-6 추가, fragment·POST 피드백, Must/Should 분리, API 경로·시점·문자 길이·팀원 정보·과정 종료 후 API 유효성 보강 |
+| v0.4 | 2026-10-05 | 팀 결정에 따라 Firebase Authentication·Cloud Firestore로 통일. 인증 토큰·사용자 ID·권한·발송 선점·벡터 검색·사용량 기준 갱신. 실제 연결 검증은 별도 |
 
 ---
 
@@ -196,7 +197,7 @@ flowchart TD
 | P-16 | 이미지 재시도 | 최초 + 1회, 실패 시 검증된 텍스트 대체 | 확정 | 렌더러 검증 필요 |
 | P-17 | 피드백 유효기간 | 브리핑 예정 날짜부터 30일 | 확정 | 삭제 정책과 함께 적용 |
 | P-18 | 개인정보 정리 | 만료·해제 후 30일 이내 삭제/익명화 | 확정 | 처리·보관 범위 실제 확인 |
-| P-19 | DB 경고/정리 | 한도 500MB 환경에서 350MB 경고 / 400MB 정리 | 확정 | 계정 한도 확인·초기 운영값 |
+| P-19 | DB 사용량 경고/정리 | Firestore 저장량·읽기/쓰기·삭제·벡터 검색 비용을 점검하고 실제 요금제에 맞춰 경고/정리 기준 확정 | 초안(합의 전) | 이전 500MB/350MB/400MB 기준은 적용하지 않음; 공개 전 확정 |
 | P-20 | 운영 점검 | 하루 1회, 마지막 완료 2시간 이상 미확인 시 확인 대상 | 확정 | 초기 운영값 |
 | P-21 | 문자 길이 계산 | NFKC 후 Unicode code point 수; JS는 `[...str.normalize('NFKC')].length`, Python은 `len(unicodedata.normalize('NFKC', str))`; 공백·문장부호 포함 | 초안(합의 전) | JS의 str.length 사용 금지, 이모지 포함 공통 샘플 검증 |
 | P-22 | HTTP·본문·렌더 제한, 기사 수·메일 용량·비용 상한 | 실제 표본·API 한도 확인 후 담당 명세에서 값 제안 | 초안(합의 전) | 공개 테스트 전 확정 필요 |
@@ -210,9 +211,9 @@ flowchart TD
 ```mermaid
 flowchart LR
   U[사용자] --> WEB[Vercel · 웹]
-  WEB --> AUTH[Supabase Auth · Google]
+  WEB --> AUTH[Firebase Authentication · Google]
   WEB --> API[Render · FastAPI]
-  API --> DB[Supabase · Postgres/pgvector]
+  API --> DB[Cloud Firestore]
   RSS[검증된 RSS·기사] --> ENG[Actions · 핵심 엔진]
   ENG <--> DB
   ENG --> LLM[코디세이 API]
@@ -222,6 +223,16 @@ flowchart LR
   SMTP --> U
 ```
 
+### Firebase 연결 기준 — 2026-10-05 확정 / 실제 연결 검증 필요
+
+- 로그인은 Firebase Authentication의 Google 공급자, DB는 Cloud Firestore로 통일한다. 웹은 Vercel, API는 FastAPI/Render, 자동 실행은 GitHub Actions를 유지한다.
+- 프런트는 로그인만 Firebase SDK로 처리하고 구독·피드백 데이터는 FastAPI로 요청한다. 브라우저에서 Firestore에 직접 쓰지 않는다. 공개 웹 설정과 서버 서비스 계정 비밀값을 구분한다.
+- FastAPI는 Firebase Admin SDK로 ID 토큰의 서명·만료·프로젝트와 폐기/사용자 비활성 상태를 확인하고 uid로 소유권을 검사한다. Google OAuth access token이나 사용자 입력 이메일을 인증 수단으로 쓰지 않는다.
+- 서버 SDK는 Security Rules를 우회하므로 서버 IAM 최소 권한과 API 소유권 검사를 모두 적용한다. 웹/모바일 직접 DB 접근은 Security Rules에서 기본 거부하며 필요한 경로만 별도 합의한다.
+- 활성 구독 중복·발송 작업 선점·생성 횟수는 고정 문서 ID와 Firestore 트랜잭션으로 관리한다. 재실행될 수 있는 트랜잭션 콜백 안에서 AI 호출·메일 발송을 하지 않는다.
+- 기사 벡터는 384차원·cosine 규칙을 유지한다. Firestore 벡터 인덱스와 과거 날짜/분야 필터, 읽기 비용을 실제 환경에서 검증한다. 전체 기사 무제한 읽기를 운영 검색으로 사용하지 않는다.
+- 스키마·인덱스·Security Rules·데이터 변경 스크립트의 적용 순서는 Backend가 관리한다. 기사·구독·피드백·발송 기록의 삭제/익명화와 Authentication 사용자 삭제까지 담당 범위를 정한다.
+
 ### 5-2. 배치 단계
 
 `환경·실행 확인 → 용량 확인 → 수집·본문·임베딩 → 작업 생성/복구·선점 → 기사 선별 → RAG → 캐시/AI 생성·검증 → 이미지 → 구독 재확인·SMTP → 상태 저장 → 일일 정리·실행 요약`
@@ -229,7 +240,7 @@ flowchart LR
 - 수집 일부 실패로 기존 정상 후보의 발송까지 막지 않는다.
 - 리드가 메일 HTML·텍스트 본문과 개인별 조립 코드를 소유한다. Frontend의 카드 이미지 템플릿과 구분하며 뉴스·뉴스 없음·종료 안내 모두 10-6 규격을 사용한다.
 - 개인정보 정리 로직은 Backend가 작성하며 리드가 배치에 호출 연결한다. 실행 환경·운영 확인은 배포·QA.
-- SQL·테이블별 상세 구조는 담당 명세에 둔다. 발송 관련 DB 코드는 리드가 소유하고 Backend가 전체 마이그레이션에 통합한다.
+- 컬렉션·문서별 상세 구조는 담당 명세에 둔다. 발송 관련 DB 코드는 리드가 소유하고 Backend가 전체 마이그레이션에 통합한다.
 
 ### 5-3. 컴포넌트 소유권
 
@@ -237,7 +248,7 @@ flowchart LR
 |---|---|---|
 | 기사·임베딩·RAG·생성·발송 엔진 | 리드 | QA 데이터 표본 |
 | 메일 HTML·텍스트·개인별 조립 | 리드 | Backend 피드백 토큰, Frontend 카드 템플릿, QA 메일 검증 |
-| 발송 작업 테이블·선점·유일성·전이 | 리드 | Backend 리뷰·마이그레이션 |
+| 발송 작업 컬렉션·선점·유일성·전이 | 리드 | Backend 리뷰·마이그레이션 |
 | 사용자·구독·피드백 API·DB·삭제 | Backend | Frontend·리드 |
 | 웹·OAuth 콘솔·카드 템플릿 | Frontend | Backend·배포 |
 | 실행 환경·Secrets·배포·통합 검증 | 배포·QA | 전원 |
@@ -271,8 +282,8 @@ flowchart LR
 |---|---|---|---|---|
 | 웹 | 바닐라 HTML/CSS/JS + Vercel | React 등 | 소규모 화면·기존 경험, 실제 배포·정책 확인 | 선택 확정/검증 필요 |
 | API | FastAPI + Render | 다른 Python 호스팅 | 설정·권한·피드백 API, 무료 콜드 스타트·SMTP 제한 확인 | 선택 확정/검증 필요 |
-| 인증 | Supabase Auth + Google | 이메일 인증 | 로그인과 DB 연계, 실제 scope·콜백 검증 | 선택 확정/검증 필요 |
-| DB | Supabase Postgres + pgvector | 별도 DB+벡터 DB | 관계형 데이터·검색·선점을 한곳에서 관리, 용량·연결 제약 | 선택 확정/검증 필요 |
+| 인증 | Firebase Authentication + Google | 이메일 인증 | 로그인과 DB 연계, 실제 scope·콜백 검증 | 선택 확정/검증 필요 |
+| DB | Cloud Firestore + 벡터 인덱스 | 별도 DB+벡터 DB | 문서 저장·벡터 검색·트랜잭션 선점, 인덱스·읽기/쓰기·저장량·비용 검증 필요 | 선택 확정/검증 필요 |
 | 자동화 | Actions + Python | 전용 스케줄러 | 배치 서버 분리, 예약 지연·누락과 한도 확인 | 선택 확정/검증 필요 |
 | 메일 | Gmail SMTP | 메일 전용 서비스 | 초기 계정 기반 발송, 앱 비밀번호·제한·전달 문제 확인 | 선택 확정/검증 필요 |
 | LLM | 코디세이 API 지원 모델 | 접근 가능한 다른 모델 | 실제 모델·호환성·비용 확인 후 확정; 기존 후보명 제공 여부 미확정 | 검증 필요 |
@@ -291,8 +302,8 @@ flowchart LR
 | Gmail 앱 비밀번호·SMTP 연결 | Backend | 테스트 메일·결과 코드 | 검증 필요 |
 | Actions의 실제 SMTP·모델·렌더러 실행 | 리드+배포·QA | 배포 환경 실행 로그 | 검증 필요 |
 | RSS 응답·파싱·분야·날짜·본문·이용 조건 | 배포·QA | 소스별 검증표·기사 표본 | 검증 필요 |
-| Google/Supabase scope·콜백·복귀·테스터 로그인 | Frontend | 외부 URL 로그인 테스트 | 검증 필요 |
-| DB 연결 방식·RLS·용량·마이그레이션 | Backend | 연결·권한 테스트 | 검증 필요 |
+| Google/Firebase scope·콜백·복귀·테스터 로그인 | Frontend | 외부 URL 로그인 테스트 | 검증 필요 |
+| DB 연결 방식·IAM/Security Rules·사용량·스키마/인덱스 변경 | Backend | 연결·권한 테스트 | 검증 필요 |
 | 플랫폼 한도·계정 권한·Secrets 등록 권한 | 배포·QA | 권한/한도 표, 값 자체는 기록 금지 | 검증 필요 |
 | 카드 이미지·CID·이미지 차단·모바일 표시 | Frontend+리드+QA | 최대 입력·실제 메일 캡처 | 검증 필요 |
 
@@ -338,7 +349,7 @@ RAG·자동화·외부 배포·사용자 피드백·보안·발송 안전성은 
 |---|---|---|---|---|---|
 | NFR-01 | 발송 신뢰성 | Must | 리드 | 4-3, 10 | 재실행·동시 실행·중단 테스트 통과, unknown 자동 재전송 없음 |
 | NFR-02 | 성능·응답 경험 | Must | 전원 | 5-1, 10 | 배치 45분·수집 15분 제한, 웹 로딩·입력 유지, 지연 정책 준수 |
-| NFR-03 | 사용자 접근 통제 | Must | Backend | 9-1 | 미인증·타인·만료 토큰으로 조회/변경 거부, RLS/API 검사 |
+| NFR-03 | 사용자 접근 통제 | Must | Backend | 9-1 | 미인증·타인·만료 토큰으로 조회/변경 거부, API 소유권·서버 IAM·클라이언트 Security Rules 검사 |
 | NFR-04 | 개인정보·비밀값 | Must | Backend/Frontend/배포·QA | 9 | 토큰 쿼리 금지·POST body 마스킹·fragment 제거, 로그·저장소 키 누출 없음, 삭제 점검 |
 | NFR-05 | 비용·재시도 제한 | Must | 리드 | 6-3, 10 | 재실행에서도 호출/전송 횟수 유지, 실제 API 기반 실행 상한 확정 |
 | NFR-06 | 운영 가시성 | Must | 배포·QA/리드 | 10 | 최근 완료·수집·발송·failed·unknown·용량·시간 확인 가능 |
@@ -358,7 +369,7 @@ NFR-10의 수치·표본은 초안이며 실제 환경으로 합의한다. 가�
 | 구독 조회·날짜별 스냅샷 | Backend | 리드 |
 | 카드 데이터 JSON | 리드 | Frontend·QA |
 | 웹 API | Backend | Frontend |
-| 발송 테이블·선점·상태 전이 | 리드 | Backend·QA |
+| 발송 문서·선점·상태 전이 | 리드 | Backend·QA |
 | 카드 템플릿 입력·렌더링 인터페이스 | Frontend | 리드·QA |
 | 개인별 메일 조립 데이터·HTML/텍스트 본문 | 리드 | Backend·QA, 카드 디자인 협업은 Frontend |
 
@@ -369,7 +380,7 @@ NFR-10의 수치·표본은 초안이며 실제 환경으로 합의한다. 가�
 | 필드 | 타입·의미 |
 |---|---|
 | contract_version | 문자열, 계약 버전 |
-| subscription_id / user_id | UUID, 구독·소유자 |
+| subscription_id / user_id | 구독 ID 문자열 / Firebase Authentication uid 문자열(UUID로 제한하지 않음) |
 | recipient_email | 인증된 수신 주소, 로그 마스킹 |
 | status | active / cancelled / expired |
 | start_date / end_date_exclusive | KST 날짜, 시작 포함·종료 제외 |
@@ -386,7 +397,7 @@ NFR-10의 수치·표본은 초안이며 실제 환경으로 합의한다. 가�
 {
   "contract_version": "1.0",
   "subscription_id": "00000000-0000-4000-8000-000000000001",
-  "user_id": "00000000-0000-4000-8000-000000000002",
+  "user_id": "firebase_fixture_uid_002",
   "recipient_email": "tester@example.com",
   "status": "active",
   "start_date": "2026-10-18",
@@ -443,7 +454,7 @@ NFR-10의 수치·표본은 초안이며 실제 환경으로 합의한다. 가�
 
 ### 10-3. 웹 API — Backend ↔ Frontend
 
-기본 경로 제안: `/api/v1`. Google 로그인 자체는 Supabase SDK 흐름이며 FastAPI에 Google 비밀번호를 보내지 않는다. 사용자 API는 Supabase Bearer JWT를 검증한다.
+기본 경로 제안: `/api/v1`. Google 로그인 자체는 Firebase Authentication SDK 흐름이며 FastAPI에 Google 비밀번호를 보내지 않는다. 사용자 API는 Authorization: Bearer로 전달된 Firebase ID 토큰을 Firebase Admin SDK로 검증한다.
 
 | 메서드·경로 | 인증 | 요청 | 응답·정책 |
 |---|---|---|---|
@@ -473,9 +484,9 @@ NFR-10의 수치·표본은 초안이며 실제 환경으로 합의한다. 가�
 
 주요 필드 초안: `job_id, subscription_id, scheduled_date_kst, mail_kind, scheduled_at, deadline_at, status, settings_snapshot, selected_article_id, generation_key, smtp_attempts, retryable, next_retry_at, claim_token, claimed_at, error_code, run_id, sent_at`.
 
-- UNIQUE(subscription_id, scheduled_date_kst, mail_kind).
-- pending 또는 재시도 가능한 failed만 DB에서 원자적으로 선점한다. 소유권 없는 실행이 상태·SMTP를 변경하지 못하도록 claim_token을 조건으로 검사한다.
-- 발송 유일성·선점·상태 SQL과 테스트는 리드가 작성하고 Backend가 리뷰 후 전체 마이그레이션에 반영한다.
+- (subscription_id, scheduled_date_kst, mail_kind)를 충돌 없이 인코딩/해시한 고정 문서 ID로 작업을 식별하고, Firestore 트랜잭션으로 최초 생성·중복 여부를 확인한다. SQL UNIQUE 제약을 가정하지 않는다.
+- pending 또는 재시도 가능한 failed만 Firestore 트랜잭션에서 원자적으로 선점한다. 소유권 없는 실행이 상태·SMTP를 변경하지 못하도록 claim_token을 조건으로 검사한다.
+- 발송 유일성·선점·상태 트랜잭션 코드과 테스트는 리드가 작성하고 Backend가 리뷰 후 전체 마이그레이션에 반영한다.
 
 ```mermaid
 stateDiagram-v2
@@ -497,7 +508,7 @@ stateDiagram-v2
 
 - 상태도는 주요 전이다. sending·sent는 이미 전송됐을 수 있으므로 해제 시 되돌려 취소했다고 표시하지 않는다.
 - stale processing은 SMTP 미시도 확인·기존 소유권 차단 후에만 재선점한다. 오래된 sending은 unknown, 자동 재전송 금지.
-- claim timeout·heartbeat·재선점 SQL은 리드 명세에서 제안하고 QA가 중단·동시 실행으로 확인한다.
+- claim timeout·heartbeat·재선점 트랜잭션은 리드 명세에서 제안하고 QA가 중단·동시 실행으로 확인한다.
 - 생성 호출 횟수는 generation_key별 별도 생성 작업에 영속 저장한다. SMTP 횟수와 혼합하거나 재실행 시 초기화하지 않는다.
 - 공유 캐싱을 생략하면 generation_key에 job_id와 기사/근거/모델/프롬프트 버전을 포함해 작업별로 관리한다. 공유 캐싱을 구현하면 동일 기사 조합의 생성 작업을 공유하되 동시에 한 실행만 생성하도록 선점한다. 어느 경우에도 같은 생성 작업의 2회 한도는 재실행으로 초기화하지 않는다.
 - 만료·늦은 날짜 작업은 기한에 따라 처리하며 사용자 해제와 오류 코드를 구분한다. 종료 안내는 mail_kind=subscription_end로 같은 안전장치를 사용한다.
@@ -569,7 +580,7 @@ Frontend는 원격 API·개인정보·토큰에 의존하지 않는 템플릿과
 - 앱에는 불필요한 이름·사진을 복사하지 않는다. 실제 제공자 처리 범위·삭제 한계는 Backend가 확인해 안내 초안 작성, 리드가 최종 검토.
 - 로그인 전 안내, 구독 전 동의, 만료·해제 후 30일 내 삭제/익명화. 활성 재구독의 필수 정보는 유지하고 이전 구독의 불필요한 개인정보는 분리 정리한다.
 - 계정 삭제 요청은 전용 화면/API 또는 웹 안내의 수동 채널로 접수한다. Backend가 본인 확인 후 새 발송을 중단·삭제·결과 안내한다. 채널·본인 확인·처리 기한·미가입 Auth 계정 보관기간은 공개 테스트 전에 합의한다. 30일 자동 정리와 삭제 요청 처리는 별개다.
-- JWT·RLS·API 소유권 확인, 서버 관리자 키 사용 시 별도 소유권 검사, CORS를 인증 대신 사용하지 않음.
+- Firebase ID 토큰·IAM/Security Rules·API 소유권 확인, 서버 관리자 키 사용 시 별도 소유권 검사, CORS를 인증 대신 사용하지 않음.
 - 해제용 메일 토큰 없음. 피드백은 fragment→메모리→주소 제거→POST body로 전달하며 DB에는 해시. resolve는 조회만, 사용자 확정 POST만 평가 변경. POST body·APM·오류 로그도 마스킹한다.
 - Secrets·서비스 키·앱 비밀번호는 저장소·샘플·채팅·로그에 넣지 않는다. 토큰·이메일 로그는 마스킹한다.
 - 이미지에는 개인정보를 넣지 않고 CID 첨부와 대체 텍스트를 사용한다. 외부 데이터로 임의 URL·내부 주소·스크립트를 실행하지 않는다.
@@ -580,9 +591,9 @@ Frontend는 원격 API·개인정보·토큰에 의존하지 않는 템플릿과
 
 | 담당 | 최종 책임 |
 |---|---|
-| 박경연 — 리드·핵심 엔진 | 수집·임베딩·선별·RAG·AI 생성·검증·캐싱, 렌더링 연결, 배치·SMTP, 발송 테이블·선점·전이·중복 방지, 통합·일정·범위. 개인정보 문구 최종 검토, README·발표·시연 최종 취합 |
-| Backend·DB | 사용자·구독·피드백 DB/API, JWT·RLS, 변경·해제·만료·피드백 토큰. 전체 마이그레이션·발송 DB 리뷰. 삭제·익명화·계정 삭제, 개인정보 문구 초안, Gmail 준비·SMTP 연결 테스트 |
-| Frontend | 사용자 화면·API, Google OAuth·Supabase Auth 콘솔·로그인, 카드 템플릿·폰트·모바일. 배포 URL을 받아 콜백·복귀 등록 |
+| 박경연 — 리드·핵심 엔진 | 수집·임베딩·선별·RAG·AI 생성·검증·캐싱, 렌더링 연결, 배치·SMTP, 발송 문서·선점·전이·중복 방지, 통합·일정·범위. 개인정보 문구 최종 검토, README·발표·시연 최종 취합 |
+| Backend·DB | 사용자·구독·피드백 DB/API, Firebase ID 토큰·IAM/Security Rules, 변경·해제·만료·피드백 토큰. 전체 마이그레이션·발송 DB 리뷰. 삭제·익명화·계정 삭제, 개인정보 문구 초안, Gmail 준비·SMTP 연결 테스트 |
+| Frontend | 사용자 화면·API, Google OAuth·Firebase Authentication 콘솔·로그인, 카드 템플릿·폰트·모바일. 배포 URL을 받아 콜백·복귀 등록 |
 | 배포·QA·데이터 검증 | 환경·Secrets·운영·권한, RSS 검증·라벨링·AI 수기 검수, 통합·장애·최대 길이 테스트, 사용자 모집·설문·개선 확인 |
 
 리드 역할에는 10-6의 메일 HTML·텍스트·개인별 조립도 포함한다. Should 항목은 범위 결정에 따라 적용하며 역할 배정은 유지한다.
@@ -618,7 +629,7 @@ Frontend는 원격 API·개인정보·토큰에 의존하지 않는 템플릿과
 - 요구사항 ID는 FR-01·NFR-01처럼 고정한다. GitHub 이슈 번호는 별개이며 제목·본문에서 요구사항 ID를 연결한다.
 - 영역·담당은 이슈/PR 라벨로 관리한다. 역할 변경 시 요구사항 번호를 바꾸지 않는다.
 - 연결 계약 PR은 사용하는 담당자 확인, 발송 DB PR은 Backend 리뷰, 공통 정책은 리드·관련 담당 확인.
-- 마이그레이션은 Backend가 번호·순서·통합을 관리한다. 리드의 발송 SQL을 임의로 다른 구현으로 바꾸지 않는다.
+- 마이그레이션은 Backend가 번호·순서·통합을 관리한다. 리드의 발송 트랜잭션 코드을 임의로 다른 구현으로 바꾸지 않는다.
 - 긴급 수정도 변경 이유·검증 결과를 남긴다. 최종 브랜치 전략·보호 설정은 실제 저장소 권한 확인 후 합의한다.
 
 ## 13. 운영 책임과 리스크·일정 문서 연결
@@ -666,7 +677,7 @@ Must 요구사항의 핵심 흐름과 안전성 검증을 통과하고 다음을
 | 메일 조립·뉴스 없음·종료·수신자 분리 | 리드 | 10-6 모든 유형·링크·AI 표시·HTML/plaintext·개인정보 분리 확인 |
 | 피드백 fragment·로그·시점·문자 길이 | Backend+Frontend+리드 | 쿼리 없는 POST·body 마스킹, 자동 평가 없음, 카드 2 기준일/보도일, JS/Python 이모지 길이 일치 |
 | Should 미구현 대체 | 관련 기능 담당 | URL만 중복 방지·비공유 생성 비용·수동 삭제 채널이 동작 |
-| JWT·RLS·토큰·비밀값 | Backend+배포 | 타인/미인증 거부, GET 변경 없음, 로그 누출 없음 |
+| Firebase ID 토큰·IAM/Security Rules·토큰·비밀값 | Backend+배포 | 타인/미인증 거부, GET 변경 없음, 로그 누출 없음 |
 | 용량·삭제·정리 | Backend+리드 | 실제 크기 확인·보호 근거·삭제 RAG 제외·날짜 정리 |
 | 운영·복구·비용 | 배포+리드 | 실행 요약·unknown 확인·수동 복구·실제 호출 상한 |
 
@@ -716,10 +727,13 @@ Must 요구사항의 핵심 흐름과 안전성 검증을 통과하고 다음을
 - [팀 공유용 요약](팀_공유용_뉴스_브리핑_요약.md): 사용자 관점 서비스 설명.
 - [GitHub 예약 이벤트](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 - [Render 무료 서비스](https://render.com/docs/free)
-- [Supabase DB 크기](https://supabase.com/docs/guides/platform/database-size)
-- [Supabase Google 로그인](https://supabase.com/docs/guides/auth/social-login/auth-google)
+- [Firestore 사용량·한도](https://firebase.google.com/docs/firestore/quotas)
+- [Firebase Google 로그인](https://firebase.google.com/docs/auth/web/google-signin)
+- [Firebase ID 토큰 검증](https://firebase.google.com/docs/auth/admin/verify-id-tokens)
 - [Google OAuth 대상·기본 로그인 scope 예외](https://support.google.com/cloud/answer/15549945?hl=en)
-- [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)
+- [Firestore 접근 제어](https://firebase.google.com/docs/firestore/security/overview)
+- [Firestore 트랜잭션](https://firebase.google.com/docs/firestore/manage-data/transactions)
+- [Firestore 벡터 검색](https://firebase.google.com/docs/firestore/vector-search)
 - [e5 모델 설명](https://huggingface.co/intfloat/multilingual-e5-small/blob/main/README.md)
 - [MDN URI fragment](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Fragment)
 - [MDN History.replaceState](https://developer.mozilla.org/en-US/docs/Web/API/History/replaceState)

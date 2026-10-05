@@ -2,7 +2,7 @@
 
 ## 확정된 사용자 결정
 
-DB 담당자가 Supabase 오류로 Firebase로 변경했다는 사용자의 최신 지시를 반영합니다. 공통 PRD v0.3의 PostgreSQL·pgvector 부분과 차이가 있으므로 변경 이력을 별도로 기록합니다. 기존 PRD의 정책·원문은 수정하지 않습니다.
+DB 담당자가 Supabase 오류로 Firebase로 변경했다는 사용자의 최신 지시를 반영합니다. 공통 PRD v0.3의 PostgreSQL·pgvector 부분과 차이가 있으므로 변경 이력을 별도로 기록합니다. 2026-10-05 후속 요청으로 공통 PRD v0.4·개인 PRD v0.3과 프런트도 Firebase Authentication·Cloud Firestore 기준으로 갱신했습니다. 구독·발송 정책은 유지합니다.
 
 사용자가 **Cloud Firestore**임을 추가 확인했습니다. 사용자·로그인·구독·피드백 구현은 기존 담당자 소유이며 엔진이 대신 구현하지 않습니다.
 

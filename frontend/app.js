@@ -1,4 +1,5 @@
 import { renderCardTemplate, cardTemplateFixture } from "./card-template.js";
+import { createFirebaseAuth, loginError } from "./firebase-auth.js";
 
 const CONFIG = window.APP_CONFIG || {};
 const BASE = (CONFIG.apiBaseUrl || "").replace(/\/$/, "");
@@ -9,7 +10,7 @@ const CATEGORY_LABELS = {
 };
 const DURATION_LABELS = { 7: "1주", 14: "2주", 28: "4주" };
 const app = document.querySelector("#app");
-let supabaseClient = null;
+
 let session = null;
 let catalog = { categories: [], durations: [7, 14, 28], consent_version: "" };
 let currentSubscription = null;
@@ -41,24 +42,23 @@ async function renderRoute() {
 const go = async (path) => { history.pushState({}, "", path); isMenuOpen = false; pageError = ""; await renderRoute(); window.scrollTo(0, 0); };
 const urlFor = (path) => path;
 
-async function loadSupabase() {
-  if (!CONFIG.supabaseUrl || !CONFIG.supabaseAnonKey) return null;
-  if (!window.supabase?.createClient) {
-    await new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
-      script.onload = resolve;
-      script.onerror = () => reject(new Error("로그인 라이브러리를 불러오지 못했습니다."));
-      document.head.append(script);
-    });
+const firebaseAuth = createFirebaseAuth(CONFIG.firebase, (user) => {
+  const previousUid = session?.user?.uid;
+  session = user ? { user } : null;
+  if (previousUid !== user?.uid) {
+    currentSubscription = null;
+    draftSettings = null;
+    subscriptionAttempt = null;
+    setup = { categories: [], keywords: [], delivery_hour_kst: 9, duration_days: 14 };
+    if (pageFromPath() !== "feedback") void renderRoute();
   }
-  if (!supabaseClient) supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
-  return supabaseClient;
-}
+});
 
 async function getSession() {
   if (pageFromPath() === "feedback") return null;
-  try { const client = await loadSupabase(); if (!client) return null; const { data } = await client.auth.getSession(); session = data.session; } catch { session = null; }
+  if (!CONFIG.firebase?.apiKey) return null;
+  try { const user = await firebaseAuth.restore(); session = user ? { user } : null; }
+  catch (error) { session = null; pageError = loginError(error); }
   return session;
 }
 
@@ -66,7 +66,9 @@ async function api(path, { method = "GET", body, idempotencyKey } = {}) {
   if (!API_ROOT) throw new Error("Backend API 주소가 아직 설정되지 않았습니다. frontend/config.js를 확인해 주세요.");
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+  if (path !== "/catalog" && !path.startsWith("/feedback")) {
+    headers.Authorization = `Bearer ${await firebaseAuth.getToken()}`;
+  }
   if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
   const response = await fetch(`${API_ROOT}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store", credentials: "omit" });
   const data = response.status === 204 ? null : await response.json().catch(() => null);
@@ -125,7 +127,7 @@ function completePageContent(){return completePage();}
 
 function wire(){document.querySelectorAll("[data-go]").forEach((el)=>el.addEventListener("click",(e)=>{e.preventDefault();go(el.dataset.go);}));document.querySelectorAll("[data-category]").forEach((el)=>el.addEventListener("click",()=>{const id=el.dataset.category;setup.categories=setup.categories.includes(id)?setup.categories.filter((x)=>x!==id):[...setup.categories,id];render();}));document.querySelectorAll("[data-duration]").forEach((el)=>el.addEventListener("click",()=>{setup.duration_days=Number(el.dataset.duration);render();}));document.querySelectorAll("[data-remove-keyword]").forEach((el)=>el.addEventListener("click",()=>{setup.keywords.splice(Number(el.dataset.removeKeyword),1);render();}));document.querySelectorAll("[data-manage-category]").forEach((el)=>el.addEventListener("click",()=>{const id=el.dataset.manageCategory;draftSettings.categories=draftSettings.categories.includes(id)?draftSettings.categories.filter((x)=>x!==id):[...draftSettings.categories,id];render();}));document.querySelectorAll("[data-remove-manage-keyword]").forEach((el)=>el.addEventListener("click",()=>{draftSettings.keywords.splice(Number(el.dataset.removeManageKeyword),1);render();}));document.querySelectorAll("[data-rating]").forEach((el)=>el.addEventListener("click",()=>chooseRating(el.dataset.rating)));document.querySelectorAll("[data-action]").forEach((el)=>el.addEventListener("click",()=>onAction(el.dataset.action)));document.querySelector("#consent")?.addEventListener("change",(e)=>{setup.consent=e.target.checked;const button=document.querySelector('[data-action="consent-next"]');if(button)button.disabled=!setup.consent;});document.querySelector("#delivery-hour")?.addEventListener("change",(e)=>setup.delivery_hour_kst=Number(e.target.value));document.querySelector("#manage-hour")?.addEventListener("change",(e)=>draftSettings.delivery_hour_kst=Number(e.target.value));}
 
-async function onAction(action){if(action==="menu"){isMenuOpen=!isMenuOpen;render();return;}if(action==="start"){if(session){go("/privacy");return;}go("/login");return;}if(action==="auth"){if(session){try{const c=await loadSupabase();await c?.auth.signOut();session=null;toast("로그아웃했어요.");render();}catch{toast("로그아웃하지 못했습니다.");}}else go("/login");return;}if(action==="google-login"){try{const client=await loadSupabase();if(!client){pageError="Supabase 로그인 설정이 아직 연결되지 않았습니다. 담당자가 frontend/config.js와 OAuth callback을 설정해야 합니다.";render();return;}const {error}=await client.auth.signInWithOAuth({provider:"google",options:{redirectTo:`${location.origin}/privacy`}});if(error)throw error;}catch(error){pageError=error.message||"Google 로그인을 시작하지 못했습니다.";render();}return;}if(action==="consent-next"){setup.consent=Boolean(document.querySelector("#consent")?.checked);if(!setup.consent)return;go("/subscribe");return;}if(action==="add-keyword"){const input=document.querySelector("#keyword-input");addKeyword(input?.value,setup.keywords);if(input)input.value="";render();return;}if(action==="create-subscription"){await createSubscription();return;}if(action==="reload-subscription"){await refreshSubscription();render();return;}if(action==="save-settings"){await saveSettings();return;}if(action==="open-cancel"){document.body.insertAdjacentHTML("beforeend",cancelModal());document.querySelector('[data-action="close-modal"]')?.focus();return;}if(action==="close-modal"){document.querySelector(".modal-backdrop")?.remove();return;}if(action==="confirm-cancel"){await cancelSubscription();return;}if(action==="add-manage-keyword"){const input=document.querySelector("#manage-keyword");addKeyword(input?.value,draftSettings.keywords);render();return;}if(action==="submit-feedback"){await submitFeedback();}}
+async function onAction(action){if(action==="menu"){isMenuOpen=!isMenuOpen;render();return;}if(action==="start"){if(session){go("/privacy");return;}go("/login");return;}if(action==="auth"){if(session){try{await firebaseAuth.signOut();session=null;currentSubscription=null;draftSettings=null;toast("로그아웃했어요.");await go("/");}catch{toast("로그아웃하지 못했습니다.");}}else go("/login");return;}if(action==="google-login"){try{const user=await firebaseAuth.signIn();session={user};await go("/privacy");}catch(error){pageError=loginError(error);render();}return;}if(action==="consent-next"){setup.consent=Boolean(document.querySelector("#consent")?.checked);if(!setup.consent)return;go("/subscribe");return;}if(action==="add-keyword"){const input=document.querySelector("#keyword-input");addKeyword(input?.value,setup.keywords);if(input)input.value="";render();return;}if(action==="create-subscription"){await createSubscription();return;}if(action==="reload-subscription"){await refreshSubscription();render();return;}if(action==="save-settings"){await saveSettings();return;}if(action==="open-cancel"){document.body.insertAdjacentHTML("beforeend",cancelModal());document.querySelector('[data-action="close-modal"]')?.focus();return;}if(action==="close-modal"){document.querySelector(".modal-backdrop")?.remove();return;}if(action==="confirm-cancel"){await cancelSubscription();return;}if(action==="add-manage-keyword"){const input=document.querySelector("#manage-keyword");addKeyword(input?.value,draftSettings.keywords);render();return;}if(action==="submit-feedback"){await submitFeedback();}}
 
 function addKeyword(raw,list){const value=(raw||"").normalize("NFKC").trim();const length=[...value].length;if(length<1||length>20){toast("키워드는 1~20자로 입력해 주세요.");return;}if(list.length>=5){toast("키워드는 최대 5개까지 추가할 수 있어요.");return;}if(list.includes(value)){toast("이미 추가한 키워드예요.");return;}list.push(value);}
 function uuid(){return crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;}
