@@ -1,0 +1,14 @@
+# Secret configuration (keep only placeholder examples in Git)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Frontend dependencies and generated files
+node_modules/
+dist/
+.vercel/
