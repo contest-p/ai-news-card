@@ -1,0 +1,62 @@
+{
+  "demo_only": true,
+  "collection_succeeded": true,
+  "now": "2026-10-18T08:07:00+09:00",
+  "subscription_snapshot": {
+    "contract_version": "1.0",
+    "subscription_id": "00000000-0000-4000-8000-000000000001",
+    "user_id": "00000000-0000-4000-8000-000000000002",
+    "recipient_email": "tester@example.com",
+    "status": "active",
+    "start_date": "2026-10-18",
+    "end_date_exclusive": "2026-11-15",
+    "scheduled_date_kst": "2026-10-18",
+    "scheduled_at": "2026-10-17T23:00:00Z",
+    "deadline_at": "2026-10-18T02:00:00Z",
+    "timezone": "Asia/Seoul",
+    "settings_version": 1,
+    "effective_date": "2026-10-18",
+    "categories": ["economy"],
+    "keywords": ["금리"],
+    "delivery_hour_kst": 8
+  },
+  "articles": [
+    {
+      "article_id": "fixture_keyword",
+      "url": "https://example.com/news/rate",
+      "title": "가상 기사: 금리 설명 자료 공개",
+      "body": "연결 시험을 위한 가상 본문입니다. 금리의 의미를 설명하는 자료가 공개됐다고 가정합니다.",
+      "category": "economy",
+      "published_at": "2026-10-17T21:00:00Z",
+      "source_verified": true,
+      "body_valid": true
+    },
+    {
+      "article_id": "fixture_latest",
+      "url": "https://example.com/news/economy",
+      "title": "가상 기사: 경제 교육 행사 안내",
+      "body": "연결 시험을 위한 가상 본문입니다. 경제 교육 행사를 안내한다고 가정합니다.",
+      "category": "economy",
+      "published_at": "2026-10-17T22:00:00Z",
+      "source_verified": true,
+      "body_valid": true
+    },
+    {
+      "article_id": "fixture_already_sent",
+      "url": "https://example.com/news/previous#top",
+      "title": "가상 기사: 금리 관련 이전 안내",
+      "body": "금리 관련 가상 기사이며 이미 발송된 URL이므로 선별하면 안 됩니다.",
+      "category": "economy",
+      "published_at": "2026-10-17T22:30:00Z",
+      "source_verified": true,
+      "body_valid": true
+    }
+  ],
+  "history": [
+    {
+      "url": "https://example.com/news/previous",
+      "status": "sent",
+      "attempted_at": "2026-10-16T23:07:00Z"
+    }
+  ]
+}
