@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$page_title</title>
+<style>
+@font-face { font-family: CardKorean; src: url(data:font/ttf;base64,$font_data); font-weight: 100 900; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #e9ebe7; color: #18272b; font-family: CardKorean, sans-serif; }
+.card { width: 1080px; min-height: 1080px; padding: 66px 76px 56px; background: #f9f8f2; border-top: 12px solid #1c665a; display: flex; flex-direction: column; }
+.masthead { display: flex; align-items: center; justify-content: space-between; padding-bottom: 27px; border-bottom: 1px solid #cbd2c8; }
+.brand { font-size: 23px; font-weight: 700; letter-spacing: 2px; }
+.badge { color: #286154; background: #e3ece3; border-radius: 30px; padding: 11px 19px; font-size: 20px; font-weight: 600; }
+.eyebrow { margin: 39px 0 17px; color: #287064; font-size: 22px; font-weight: 700; letter-spacing: 1px; }
+h1 { margin: 0; font-size: 51px; line-height: 1.38; font-weight: 800; word-break: keep-all; overflow-wrap: anywhere; }
+.article-date { margin: 20px 0 31px; font-size: 21px; color: #63716b; }
+.rule { width: 66px; height: 5px; background: #1c665a; margin-bottom: 34px; }
+.sentence { margin: 0 0 24px; font-size: 31px; line-height: 1.72; word-break: keep-all; overflow-wrap: anywhere; white-space: pre-wrap; }
+.fact-date { display: block; color: #286154; font-size: 21px; font-weight: 600; margin-bottom: 7px; }
+.terms { margin: 7px 0 22px; padding: 23px 27px; background: #eceee5; border-radius: 12px; }
+.term { margin: 0 0 14px; font-size: 24px; line-height: 1.6; overflow-wrap: anywhere; }
+.term:last-child { margin-bottom: 0; }
+footer { margin-top: auto; padding-top: 34px; }
+.source { border-top: 1px solid #cbd2c8; padding-top: 23px; font-size: 21px; line-height: 1.7; color: #53645c; overflow-wrap: anywhere; }
+.source a { color: #286154; text-decoration: none; }
+.bottom { margin-top: 23px; display: flex; justify-content: space-between; color: #66746b; font-size: 19px; gap: 20px; }
+</style>
+<article class="card">
+  <header class="masthead"><span class="brand">NEWS BRIEF</span><span class="badge">AI 편집 · 원문 발췌</span></header>
+  <div class="eyebrow">$card_label</div>
+  <h1>$headline</h1>
+  <div class="article-date">기사 게시 · $published</div>
+  <div class="rule"></div>
+  <section>$sentences</section>
+  $terms
+  <footer><div class="source">$sources</div><div class="bottom"><span>검수용 미리보기 · 원문과 함께 확인하세요</span><span>$page_number</span></div></footer>
+</article>
+</html>

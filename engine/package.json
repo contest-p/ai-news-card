@@ -1,0 +1,5 @@
+{
+  "name": "ai-news-card-renderer",
+  "private": true,
+  "devDependencies": { "playwright": "1.62.1" }
+}
