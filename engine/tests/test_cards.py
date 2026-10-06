@@ -54,6 +54,34 @@ class CardTests(unittest.TestCase):
         result.card_data["card1"]["sentences"].clear()
         self.assertEqual(self.draft, before)
 
+    def test_dates_are_time_expressions_not_numbers_needing_metadata(self):
+        for body in ("한국은행은 2026-10-01 기준으로 대출금리를 정했습니다.",
+                     "한국은행은 10월 5일 대출금리를 정했습니다.",
+                     "한국은행은 2026년 10월 5일 대출금리를 정했습니다.",
+                     "한국은행은 2026.10.05 대출금리를 정했습니다."):
+            with self.subTest(body=body):
+                self.current_body(body)
+                self.assertEqual(self.result().status, "ready_for_review")
+
+    def test_identifiers_with_digits_are_not_numbers(self):
+        self.current_body("COVID-19 이후 G7 국가의 대출금리를 정했습니다.")
+        self.assertEqual(self.result().status, "ready_for_review")
+
+    def test_real_quantities_still_require_metadata(self):
+        self.current_body("대출금리는 3.5%로 정했습니다.")
+        self.assertEqual(self.result().status, "failed")
+
+    def test_term_name_over_template_limit_is_omitted_not_fatal(self):
+        self.current_body("기준금리는 중앙은행이 정하는 금리입니다.")
+        long_name = "가" * 21
+        self.current_body(f"{long_name}는 중앙은행이 정하는 금리입니다.")
+        self.draft["card1"]["terms"] = [{"term": long_name, "definition": "중앙은행이 정하는 금리",
+                                         "source_article_id": "current", "evidence_quote": self.current.article.body}]
+        result = self.result()
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.card_data["card1"]["terms"], [])
+        self.assertIn("TERM_OMITTED:NAME_TOO_LONG", result.issues)
+
     def test_card1_failure_blocks_all_cards(self):
         self.draft["card1"]["sentences"][0]["text"] = "대출금리가 절반으로 떨어질 전망입니다."
         result = self.result()

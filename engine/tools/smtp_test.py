@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import smtplib
-import ssl
 import sys
 
 from dotenv import load_dotenv
@@ -17,8 +16,9 @@ from dotenv import load_dotenv
 from engine.card_render import ROOT, card_data_hash
 from engine.generation import LocalGenerationStore
 from engine.mail_assembly import NewsMailData, assemble_mail, email_address
-from engine.demos.mail_demo import approved_images
+from engine.card_images import approved_images
 from engine.selection import parse_timestamp
+from engine.smtp_sender import connect  # 운영 발송과 같은 TLS·로그인 절차
 from engine.card_render import KST
 
 
@@ -49,27 +49,6 @@ def load_smtp_settings():
     if sender.endswith(".invalid") or recipient.endswith(".invalid"):
         raise ValueError("REAL_TEST_ADDRESSES_REQUIRED")
     return SmtpSettings(host, port, values["SMTP_SECURITY"], values["SMTP_USER"], values["SMTP_PASSWORD"], sender, recipient)
-
-
-def connect(settings):
-    context = ssl.create_default_context()
-    if settings.security == "ssl":
-        smtp = smtplib.SMTP_SSL(settings.host, settings.port, timeout=30, context=context)
-    else:
-        smtp = smtplib.SMTP(settings.host, settings.port, timeout=30)
-        try:
-            smtp.ehlo()
-            smtp.starttls(context=context)
-            smtp.ehlo()
-        except Exception:
-            smtp.close()
-            raise
-    try:
-        smtp.login(settings.user, settings.password)
-    except Exception:
-        smtp.close()
-        raise
-    return smtp
 
 
 def send_once(settings, message, *, store, key, connector=connect):
@@ -124,7 +103,8 @@ def prepare_message(settings, output_root):
         _, message = assemble_mail(NewsMailData(job_id=job, recipient_email=settings.recipient,
                                   sender_email=settings.sender,
                                   scheduled_date_kst=parse_timestamp(result["input_collected_at"]).astimezone(KST).date(),
-                                  card_data=data, selection_reason=result["selection_reason"], inline_images=images))
+                                  card_data=data, selection_reason=result["selection_reason"], inline_images=images,
+                                  preview=True))
         path.write_bytes(message.as_bytes())
     return message, key, issues
 

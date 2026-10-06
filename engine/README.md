@@ -2,29 +2,37 @@
 
 RSS 수집 → 기사 저장·선별 → 과거 기사 검색(RAG) → AI 카드 생성·검사 → 이미지 → 메일 조립을 담당합니다.
 
-## 현재 상태 — 2026-10-06 KST
+## 현재 상태 — 2026-10-06 KST (DB 연결 전 마무리)
 
-**개별 기능 구현과 로컬 검증 단계입니다. DB 연결만으로 서비스가 완성되지는 않습니다.** 운영 발송 작업 관리·전체 배치·예약 실행·통합 검증이 남아 있습니다. 기준은 공통 PRD 본문 v0.4와 박경연 엔진 PRD 본문 v0.3입니다.
+**DB가 필요 없는 발송 흐름 전체를 코드로 연결했고, 가짜 저장소·가짜 Backend로 검증했습니다.** DB는 Cloud Firestore(Firebase)로 확정이며 실제 연결은 2026-10-07에 진행합니다. 기준은 공통 PRD 본문 v0.4와 박경연 엔진 PRD 본문 v0.3입니다.
 
-### 이번에 완료한 작업
+### 오늘 추가·수정한 것
 
-- 코드 변경 없는 폴더 정리: Python 의존성 파일 4개를 `dependencies/`, Firestore 자료를 `docs/firebase/`로 이동했습니다. 기존 Python import·실행 경로는 유지했습니다.
-- 이후 기능 구현: `mail_assembly.py`에 뉴스 피드백 링크, 뉴스 없음 안내, 자연 만료 종료 안내를 추가했습니다. 메일 본문 조립이며 실제 자동 발송 구현은 아닙니다.
-- 정상 수집·후보 없음 조건, 수동 해제 사용자 종료 안내 차단, 7/14/28일 날짜, 토큰 fragment 처리·수신자 분리를 검사합니다.
-- `demos/mail_types_demo.py`와 `samples/mail.json`으로 세 종류의 메일을 재현할 수 있습니다. 미리보기 결과는 상태 기록과 별도 위치에 저장합니다.
-- 자동 테스트 **139개 통과**. PC 800px·모바일 390px의 3종 기본/이미지 없는 미리보기 총 12개 화면 검사 통과. 실제 DB·AI·SMTP 호출은 하지 않았습니다.
+| 구분 | 파일 | 내용 |
+|---|---|---|
+| 신규 | `delivery.py` | 발송 작업 고정 ID, 뉴스 기한(+3시간·다음 자정·만료 중 이른 시각), 종료 안내 24시간, 원자적 선점·claim_token·상태 전이, 멈춘 processing 재선점, 멈춘 sending→unknown. `JobStore` 계약 + 메모리 구현 |
+| 신규 | `smtp_sender.py` | 운영 SMTP 1회 전송. 수락/명시적 거부(4xx 재시도·5xx 영구)/결과 불확실(unknown) 구분, Date 헤더, 봉투 검사 |
+| 신규 | `pipeline.py` | 작업 1건: 선점 → 최신 상태 확인 → 선별 → 카드 → 이미지 → 메일 조립·보관 → SMTP 직전 재확인 → 전송·상태 기록. SMTP 최초 포함 3회, 재시도 때 같은 메일·토큰 재사용 |
+| 신규 | `batch.py` | 배치 1회: 수집 15분 예산 → 작업 생성·이전 미완료 작업 복구 → 45분 예산 → 개인정보 정리 호출 → 개인정보 없는 실행 요약 |
+| 신규 | `card_builder.py`, `card_images.py`, `mail_archive.py` | 생성 작업 연결 어댑터 / 이미지 최초+1회 후 텍스트 전환(P-16) / 재시도용 MIME 보관 |
+| 신규 | `demos/batch_demo.py` | 네트워크·DB·AI·SMTP 없이 배치 전체 실행. outbox에 .eml 저장 |
+| 수정 | `live_collection.py` | 기사 단위 정책 제외(분류 불가·게시 시각 없음 등)는 정상 수집으로 판정 → 뉴스 없음 안내 가능. 새 QA 소스는 그 소스만 실패, CWD 무관 로드, 수집 예산 |
+| 수정 | `selection.py`, `generation.py` | 60자 초과 제목은 후보 제외·API 호출 전 차단(불필요한 재호출 방지). 수치 형식 보정을 데모에서 생성 단계로 이동 |
+| 수정 | `cards.py`, `card_render.py` | 날짜(2026-10-01, 10월 5일 등)·식별자(COVID-19, G7)를 수량으로 오인하지 않음. 용어 이름 20자(프런트와 동일), 초과 시 용어만 생략 |
+| 수정 | `mail_assembly.py`, `gateway.py` | `preview` 명시 필수(검수용 문구가 실제 메일에 붙는 사고 방지), 메일 HTML 틀 공통화. 발송 가능 여부가 이유(cancelled/expired 등)를 함께 반환 |
+
+자동 테스트 **201개 통과**(기존 139 + 신규 62). 실제 DB·AI·SMTP 호출은 하지 않았습니다.
 
 ### 다음 작업 순서
 
 | 순서 | 작업 | 완료해야 할 내용 |
 |---|---|---|
-| 1 | 카드 이미지 연결 | 프런트 카드 템플릿 연결, 최초+1회 이미지 재시도, 실패 시 검증된 전체 텍스트로 전환 |
-| 2 | 발송 제어 로직 | 작업 ID·상태 전이·발송 기한, 명확한 일시 실패만 최대 3회 SMTP 시도, unknown 자동 재발송 금지; 가짜 저장소로 먼저 테스트 |
-| 3 | 실제 DB·Backend 연결 | 사용자 요청상 2026-10-07 진행 예정. 기사·임베딩·구독·발송 이력·토큰, 트랜잭션 선점·생성 횟수, 발송 직전 해제·만료·삭제 요청 확인 |
-| 4 | 전체 자동화 | 수집부터 발송까지 배치 연결, 매시간 7분 Actions 예약, 수집 15분/배치 45분 제한, 개인정보 정리 호출·실행 요약 |
-| 5 | 실제 통합 검증 | 가입 → 카드·메일 수신 → 피드백 → 해제·만료, 중단·동시 실행·재시도, 실제 메일 앱·사용자 테스트 |
+| 1 | 실제 DB·Backend 연결 (2026-10-07) | `JobStore`·생성 작업 저장소·기사/임베딩의 Firestore 구현, `EngineGateway` 함수(대상 목록·발송 가능 이유·피드백 토큰) 합의, 메일 보관 위치·기한 |
+| 2 | 운영 실행 진입점·Actions | 실제 객체를 조립하는 실행 스크립트, 매시간 7분 예약(루트 workflow는 윤지민과 공유 후 추가), Secrets·폰트·Chromium 설치 |
+| 3 | 카드 템플릿 교체 | `frontend/card-template.js` 연결(현재는 엔진 임시 템플릿). 김현서와 렌더 방식 합의 |
+| 4 | 실제 통합 검증 | 가입 → 카드·메일 수신 → 피드백 → 해제·만료, 중단·동시 실행·재시도, 실제 메일 앱·사용자 테스트 |
 
-1~2번의 로직·가상 테스트는 DB 연결 전에 진행할 수 있습니다. 공유 캐싱·의미 기반 사건 묶기·자동 타 보도 대조는 후순위입니다. 요구사항별 상세 누락 항목은 [구현 현황](docs/IMPLEMENTATION_STATUS.md)에 기록했습니다.
+공유 캐싱·의미 기반 사건 묶기·자동 타 보도 대조는 후순위입니다. 상세는 [구현 현황](docs/IMPLEMENTATION_STATUS.md)을 확인하세요.
 
 ## 폴더 안내
 
@@ -56,8 +64,11 @@ RSS 수집 → 기사 저장·선별 → 과거 기사 검색(RAG) → AI 카드
 | 생성 관리 | `generation.py` | 생성 흐름·로컬 잠금·호출 횟수·결과 저장 |
 | 카드 검사 | `cards.py` | 근거·숫자·길이·시점 검사, 카드 데이터 조립 |
 | 이미지 | `card_render.py` | HTML 구성·PNG 변환 도구 호출 |
-| 메일 | `mail_assembly.py` | 뉴스·뉴스 없음·종료 안내와 링크·첨부 조립 |
-| Backend 경계 | `gateway.py` | 구독·발송 가능 여부 연결 규격과 샘플 구현 |
+| 메일 | `mail_assembly.py`, `mail_archive.py` | 뉴스·뉴스 없음·종료 안내와 링크·첨부 조립 / 재시도용 보관 |
+| 이미지 연결 | `card_images.py` | 렌더 최초+1회, 승인된 PNG만 첨부, 실패 시 텍스트 |
+| 발송 | `delivery.py`, `smtp_sender.py` | 작업 ID·기한·선점·상태 전이 / SMTP 전송·결과 분류 |
+| 흐름 | `card_builder.py`, `pipeline.py`, `batch.py` | 생성 연결 / 작업 1건 처리 / 배치 1회 실행·요약 |
+| Backend 경계 | `gateway.py` | 대상 목록·발송 가능 이유·피드백 토큰 연결 규격과 샘플 구현 |
 | 설정·패키지 | `settings.py`, `__init__.py` | AI 설정 로드 / 패키지 표시 |
 
 `tools/smtp_test.py`는 지정 테스트 주소 전송 도구이며 운영 배치를 대신하지 않습니다. `package.json`·`package-lock.json`은 Node/Playwright 의존성, `.env.example`은 비밀값 없는 설정 예시입니다.
@@ -82,6 +93,9 @@ RAG 추가 의존성 설치: `python -m pip install -r engine/dependencies/requi
 ```powershell
 # 자동 테스트: 외부 API·DB·실제 메일을 사용하지 않음
 .\engine\.venv\Scripts\python.exe -B -m unittest discover -s engine/tests -v
+
+# DB·AI·SMTP 없이 배치 전체 실행 (결과: engine/.engine-local/previews/batch-demo/)
+.\engine\.venv\Scripts\python.exe -B -m engine.demos.batch_demo
 
 # DB·AI·SMTP 없이 세 종류의 메일 미리보기 생성
 .\engine\.venv\Scripts\python.exe -B -m engine.demos.mail_types_demo

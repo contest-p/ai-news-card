@@ -1,11 +1,11 @@
 """로컬 기사·임베딩 기반 과거 근거 검색. 카드 생성·메일 전송은 하지 않는다."""
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timezone
 
 from engine.article_store import StoredArticle, prepare_article
 from engine.embeddings import Encoder, validate_vector
-from engine.selection import aware_utc, canonical_url
+from engine.selection import KST, aware_utc, canonical_url
 
 
 @dataclass(frozen=True)
@@ -38,8 +38,7 @@ class RagResult:
 
 
 def past_cutoff(work_date_kst: date) -> datetime:
-    return datetime.combine(work_date_kst, time.min,
-                            tzinfo=timezone(timedelta(hours=9))).astimezone(timezone.utc)
+    return datetime.combine(work_date_kst, time.min, tzinfo=KST).astimezone(timezone.utc)
 
 
 def index_articles(records: list[StoredArticle], encoder: Encoder) -> list[ArticleEmbedding]:

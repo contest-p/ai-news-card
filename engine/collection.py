@@ -26,9 +26,11 @@ class CollectionResult:
     articles: list[Article] = field(default_factory=list)
     issues: list[CollectionIssue] = field(default_factory=list)
     successful_sources: int = 0
+    failed_sources: int = 0
 
     @property
     def collection_succeeded(self) -> bool:
+        # 로컬 fixture 수집은 모든 기록을 실패로 보는 엄격한 기준을 유지한다.
         return self.successful_sources > 0 and not self.issues
 
 

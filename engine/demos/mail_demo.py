@@ -1,42 +1,12 @@
 """실제 생성 카드로 로컬 HTML·텍스트·EML을 만든다. 발송하지 않는다."""
 
 import base64
-import hashlib
 import json
-from pathlib import Path
 import sys
 
-from engine.card_render import ROOT, card_data_hash, validate_render_data
-from engine.mail_assembly import MAIL_TEMPLATE_VERSION, InlineImage, NewsMailData, assemble_mail
-
-
-def approved_images(data, render_root):
-    render_root = Path(render_root).resolve()
-    path = render_root / "render_result.json"
-    if not path.exists():
-        return (), ["IMAGES_NOT_AVAILABLE_TEXT_ONLY"]
-    try:
-        manifest = json.loads(path.read_text("utf-8"))
-        if manifest["card_data_sha256"] != card_data_hash(data):
-            return (), ["IMAGE_CARD_INPUT_MISMATCH_TEXT_ONLY"]
-        images, issues = [], []
-        for index, raw_path in enumerate(manifest["image_files"]):
-            image_path = Path(raw_path).resolve()
-            number = index + 1
-            if (not image_path.is_relative_to(render_root)
-                    or image_path.name != f"card{number}.png" or number > 2):
-                raise ValueError("UNAPPROVED_IMAGE_PATH")
-            image_bytes = image_path.read_bytes()
-            check = manifest["layout_result"][index]
-            if (check["overflow"] or check["externalRequests"] or not check["fontLoaded"]
-                    or hashlib.sha256(image_bytes).hexdigest() != check["sha256"]
-                    or not image_bytes.startswith(b"\x89PNG\r\n\x1a\n") or len(image_bytes) > 2_000_000):
-                issues.append(f"CARD{number}_IMAGE_INVALID_TEXT_ONLY")
-                continue
-            images.append(InlineImage(number, image_bytes))
-        return tuple(images), issues
-    except (OSError, ValueError, KeyError, TypeError, IndexError):
-        return (), ["IMAGE_MANIFEST_INVALID_TEXT_ONLY"]
+from engine.card_images import approved_images
+from engine.card_render import ROOT, validate_render_data
+from engine.mail_assembly import MAIL_TEMPLATE_VERSION, NewsMailData, assemble_mail
 
 
 def main():
@@ -58,7 +28,8 @@ def main():
         mail_data = NewsMailData(job_id="local-preview-" + data["article_id"],
                                 recipient_email="reader@example.invalid", sender_email="briefing@example.invalid",
                                 scheduled_date_kst=day, card_data=data,
-                                selection_reason=generated["selection_reason"], inline_images=images)
+                                selection_reason=generated["selection_reason"], inline_images=images,
+                                preview=True)
         subject, message = assemble_mail(mail_data)
         (output_dir / "briefing.eml").write_bytes(message.as_bytes())
         html = message.get_body(preferencelist=("html",)).get_content()

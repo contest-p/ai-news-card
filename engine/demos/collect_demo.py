@@ -46,7 +46,7 @@ def main() -> None:
             "selection_status": status,
             "selected_title": selected.title if selected else None,
             "selection_reason": reason,
-            "delivery_eligible_fixture": gateway.check_delivery_eligibility(snapshot["subscription_id"], now),
+            "delivery_eligible_fixture": gateway.check_delivery_eligibility(snapshot["subscription_id"], now).eligible,
             "mail_sent": False,
         }
         print(json.dumps(output, ensure_ascii=False, indent=2))

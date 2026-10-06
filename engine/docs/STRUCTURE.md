@@ -36,7 +36,14 @@
 | 검사 | cards.py | 카드 근거·수치·길이 검사와 데이터 조립 |
 | 이미지 | card_render.py | HTML 구성·PNG 렌더러 호출·CLI |
 | 메일 | mail_assembly.py | 뉴스·뉴스 없음·종료 안내, 피드백 링크, HTML·텍스트·첨부 이메일 조립 |
-| 연결 | gateway.py | Backend 연결 계약과 가상 응답 구현 |
+| 메일 | mail_archive.py | 재시도용 완성 MIME 보관 계약·메모리/로컬 구현 |
+| 이미지 | card_images.py | 렌더 최초+1회, 승인된 PNG 검사, 실패 시 텍스트 전환 |
+| 발송 | delivery.py | 발송 작업 ID·기한·선점·상태 전이, JobStore 계약·메모리 구현 |
+| 발송 | smtp_sender.py | 운영 SMTP 연결·1회 전송·결과 분류 |
+| 흐름 | card_builder.py | 선택 기사 → 저장 기록 → RAG → generate_cards 어댑터 |
+| 흐름 | pipeline.py | 발송 작업 1건 처리 |
+| 흐름 | batch.py | 배치 1회 실행·예산·실행 요약 |
+| 연결 | gateway.py | Backend 연결 계약(대상 목록·발송 가능 이유·피드백 토큰)과 가상 응답 구현 |
 | 설정 | settings.py | AI 설정 로드·검사 |
 | 패키지 | __init__.py | Python 패키지 표시 |
 
@@ -46,7 +53,7 @@
 
 프로젝트 완성 후 코드 경로 수정까지 허용되는 정리에서는 수집·저장·검색·생성·렌더링·메일별 패키지 분리를 검토합니다. 파일 이동과 import·CLI·리소스 경로·문서 변경을 함께 수행하고 기존 테스트를 확인해야 합니다.
 
-특히 `tools/smtp_test.py`는 `demos/mail_demo.py`를 참조하고, 여러 테스트는 다른 테스트 파일의 준비 데이터를 공유합니다. demos나 tests를 독립된 임시 폴더처럼 삭제하면 안 됩니다.
+2026-10-06 후속 정리로 운영에 필요한 로직(이미지 승인 `card_images.approved_images`, 수치 형식 보정 `cards.repair_numeric_format`)을 demos에서 핵심 모듈로 옮겼습니다. tools는 더 이상 demos를 참조하지 않습니다. 다만 여러 테스트는 다른 테스트 파일의 준비 데이터를 공유합니다. demos나 tests를 독립된 임시 폴더처럼 삭제하면 안 됩니다.
 
 ## 실행 결과와 상태 기록
 

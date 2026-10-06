@@ -104,7 +104,8 @@ class CollectionTests(unittest.TestCase):
         snapshot["keywords"].clear()
         self.assertEqual(gateway.get_subscription_snapshot(subscription_id, date(2026, 10, 18))["keywords"],
                          ["금리"])
-        self.assertFalse(gateway.check_delivery_eligibility(subscription_id, datetime.now(timezone.utc)))
+        eligibility = gateway.check_delivery_eligibility(subscription_id, datetime.now(timezone.utc))
+        self.assertEqual((eligibility.eligible, eligibility.reason), (False, "cancelled"))
         with self.assertRaises(LookupError):
             gateway.get_subscription_snapshot("other", date(2026, 10, 18))
         with self.assertRaises(LookupError):

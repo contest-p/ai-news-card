@@ -38,6 +38,15 @@ def canonical_url(value: str) -> str:
     return urlunsplit((scheme, host, parts.path or "/", parts.query, ""))
 
 
+KST = timezone(timedelta(hours=9))
+CARD_TITLE_MAX_CHARS = 60  # P-12. 원문 제목은 자르지 않으므로 초과 기사는 후보에서 제외한다.
+
+
+def nfkc_length(value: str) -> int:
+    """P-21 공통 문자 길이: NFKC 정규화 후 code point 수."""
+    return len(unicodedata.normalize("NFKC", value))
+
+
 def match_text(value: str) -> str:
     return unicodedata.normalize("NFKC", value).casefold()
 
@@ -128,6 +137,7 @@ def select_article(
             continue
         if (article.source_verified is not True or article.body_valid is not True
                 or not article.article_id or not article.title.strip() or not article.body.strip()
+                or nfkc_length(article.title.strip()) > CARD_TITLE_MAX_CHARS
                 or article.category not in categories
                 or not scheduled - timedelta(hours=24) <= published < scheduled
                 or url in blocked):

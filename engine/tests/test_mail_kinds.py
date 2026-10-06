@@ -165,6 +165,15 @@ class MailKindTests(unittest.TestCase):
             self.assertNotIn("reader@example.invalid", body)
         self.assertEqual(one["Message-ID"], self.bodies(self.news(feedback_token="FIRST_FIXTURE"))[0]["Message-ID"])
 
+    def test_every_kind_requires_explicit_preview_flag(self):
+        # 기본값으로 검수용 문구가 붙은 메일이 실제 발송되지 않도록 명시를 요구한다.
+        for factory in (self.news, self.no_news, self.end):
+            data = factory()
+            values = {name: getattr(data, name) for name in data.__dataclass_fields__ if name != "preview"}
+            with self.subTest(kind=factory.__name__), self.assertRaises(ValueError) as caught:
+                assemble_mail(type(data)(**values))
+            self.assertEqual(str(caught.exception), "PREVIEW_FLAG_REQUIRED")
+
     def test_every_kind_rejects_header_injection_and_ambiguous_date(self):
         for factory in (self.news, self.no_news, self.end):
             for changes in ({"recipient_email": "a@example.com\r\nBcc: b@example.com"},

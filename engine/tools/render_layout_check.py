@@ -2,11 +2,9 @@
 
 import copy
 import json
-import os
-from pathlib import Path
 import sys
 
-from engine.card_render import ROOT, render_card
+from engine.card_render import ROOT, render_card, resolve_font_path
 
 
 def layout_fixture():
@@ -31,7 +29,7 @@ def layout_fixture():
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     root = ROOT / ".engine-local/render-layout-check"
-    font = Path(os.environ.get("CARD_FONT_PATH", "C:/Windows/Fonts/NotoSansKR-VF.ttf"))
+    font = resolve_font_path()
     fixture = layout_fixture()
     results = {"fixture_only": True, "maximum": render_card(fixture, root / "maximum", font_path=font)}
     long = copy.deepcopy(fixture)

@@ -21,7 +21,7 @@ as_of는 사실 기준일 YYYY-MM-DD가 근거 구절에 명시된 경우만 채
 숫자가 없으면 numbers는 []다. 숫자마다 surface, unit, subject, as_of, source_article_id,
 evidence_quote를 둔다. surface는 문자열이며 단위·대상·시점을 같은 근거 구절에서 확인하라.
 NFKC 정규화 후 카드별 text 합계는 400자 이하이다.
-용어는 card1에만 최대 2개, term, definition, source_article_id, evidence_quote를 둔다.
+용어는 card1에만 최대 2개, term, definition, source_article_id, evidence_quote를 둔다. term은 20자 이하이다.
 definition은 100자 이하의 원문 발췌이다. 숫자가 포함된 용어 설명은 이번 단계에서 생략한다.
 URL·출처명·제목·게시일은 서버가 채우므로 출력하지 마라.
 """

@@ -27,7 +27,8 @@ class MailAssemblyTests(unittest.TestCase):
     def mail(self, **options):
         values = dict(job_id="fixture-job", recipient_email="one@example.invalid",
                       sender_email="sender@example.invalid", scheduled_date_kst=date(2026, 10, 5),
-                      card_data=self.data, selection_reason={"type": "category", "label": "관심 분야의 최신 기사"})
+                      card_data=self.data, selection_reason={"type": "category", "label": "관심 분야의 최신 기사"},
+                      preview=True)
         values.update(options)
         return assemble_mail(NewsMailData(**values))[1]
 

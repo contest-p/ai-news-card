@@ -65,7 +65,8 @@ class NewsMailData:
     subscription_management_url: str | None = None
     web_links: WebMailLinks | None = None
     feedback_token: str | None = field(default=None, repr=False)
-    preview: bool = True
+    # True=로컬 검수(안내 문구 포함), False=실제 발송용. 기본값 없이 반드시 명시한다.
+    preview: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,8 @@ class NoNewsMailData:
     web_links: WebMailLinks
     collection_succeeded: bool
     selection_result: SelectionResult
-    preview: bool = True
+    # True=로컬 검수(안내 문구 포함), False=실제 발송용. 기본값 없이 반드시 명시한다.
+    preview: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -90,7 +92,8 @@ class EndNoticeMailData:
     subscription_status: str
     start_date: date
     end_date_exclusive: date
-    preview: bool = True
+    # True=로컬 검수(안내 문구 포함), False=실제 발송용. 기본값 없이 반드시 명시한다.
+    preview: bool | None = None
 
 
 def email_address(value):
@@ -132,6 +135,8 @@ def card_text(data, card, *, background):
 
 
 def validate_envelope(data):
+    if data.preview is None:
+        raise ValueError("PREVIEW_FLAG_REQUIRED")
     recipient, sender = email_address(data.recipient_email), email_address(data.sender_email)
     string(data.job_id, 120)
     if any(char in data.job_id for char in "\r\n"):
@@ -160,6 +165,17 @@ def management_url(data):
             raise ValueError("MANAGEMENT_PAGE_REQUIRED")
         return url
     raise ValueError("APPROVED_WEB_LINKS_REQUIRED")
+
+
+def mail_shell(inner_html):
+    """세 메일 유형이 공유하는 600px 표 레이아웃. inner_html은 호출자가 이스케이프한다."""
+    return ('<!doctype html><html lang="ko"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+            '<body style="margin:0;background:#eef0eb;color:#18272b;font-family:Arial,\'Malgun Gothic\',sans-serif;">'
+            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 12px;">'
+            '<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fff;">'
+            '<tr><td style="padding:28px 24px;border-top:6px solid #1c665a;overflow-wrap:anywhere;">'
+            + inner_html + '</td></tr></table></td></tr></table></body></html>')
 
 
 def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
@@ -227,19 +243,13 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
     notice = PREVIEW_NOTICE if data.preview else ""
     if notice:
         plain.extend(["", notice])
-    html = ('<!doctype html><html lang="ko"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
-            '<body style="margin:0;background:#eef0eb;color:#18272b;font-family:Arial,\'Malgun Gothic\',sans-serif;">'
-            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 12px;">'
-            '<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fff;">'
-            '<tr><td style="padding:28px 24px;border-top:6px solid #1c665a;overflow-wrap:anywhere;">'
-            f'<p style="font-size:13px;color:#1c665a;letter-spacing:2px;">NEWS BRIEF · {day}</p>'
-            f'<h1 style="font-size:25px;line-height:1.5;margin:16px 0;overflow-wrap:anywhere;">{escape(title)}</h1>'
-            f'<p style="font-size:14px;color:#52635b;line-height:1.8;">기사 게시 · {escape(kst_time(data.card_data["published_at"]))}<br>'
-            f'선택 이유 · {escape(reason)}<br>AI 편집 · 원문 발췌</p>'
-            + "".join(sections) + '<div style="border-top:1px solid #d3d9d0;padding-top:20px;font-size:14px;line-height:1.7;">'
-            + "".join(links) + feedback_html + management + (f'<p style="color:#63716b;">{notice}</p>' if notice else "") + '</div>'
-            '</td></tr></table></td></tr></table></body></html>')
+    html = mail_shell(
+        f'<p style="font-size:13px;color:#1c665a;letter-spacing:2px;">NEWS BRIEF · {day}</p>'
+        f'<h1 style="font-size:25px;line-height:1.5;margin:16px 0;overflow-wrap:anywhere;">{escape(title)}</h1>'
+        f'<p style="font-size:14px;color:#52635b;line-height:1.8;">기사 게시 · {escape(kst_time(data.card_data["published_at"]))}<br>'
+        f'선택 이유 · {escape(reason)}<br>AI 편집 · 원문 발췌</p>'
+        + "".join(sections) + '<div style="border-top:1px solid #d3d9d0;padding-top:20px;font-size:14px;line-height:1.7;">'
+        + "".join(links) + feedback_html + management + (f'<p style="color:#63716b;">{notice}</p>' if notice else "") + '</div>')
     message = EmailMessage(policy=SMTP)
     message["From"], message["To"], message["Subject"] = sender, recipient, subject
     # 수신자별 고유 Message-ID. 발송 시각/발송 상태는 여기서 만들지 않는다.
@@ -290,17 +300,11 @@ def assemble_notice(data: NoNewsMailData | EndNoticeMailData):
     if data.preview:
         plain.extend(["", PREVIEW_NOTICE])
     paragraphs = "".join(f'<p style="font-size:16px;line-height:1.8;">{escape(line)}</p>' for line in lines)
-    html = ('<!doctype html><html lang="ko"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
-            '<body style="margin:0;background:#eef0eb;color:#18272b;font-family:Arial,\'Malgun Gothic\',sans-serif;">'
-            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 12px;">'
-            '<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fff;">'
-            '<tr><td style="padding:28px 24px;border-top:6px solid #1c665a;overflow-wrap:anywhere;">'
-            f'<p style="color:#1c665a;">NEWS BRIEF · {day}</p>'
-            f'<h1 style="font-size:25px;line-height:1.5;">{escape(title)}</h1>' + paragraphs
-            + f'<p><a href="{escape(manage_url, quote=True)}" style="color:#1c665a;">{management_label}</a> · 웹사이트 로그인 필요</p>'
-            + (f'<p style="color:#63716b;">{PREVIEW_NOTICE}</p>' if data.preview else "")
-            + '</td></tr></table></td></tr></table></body></html>')
+    html = mail_shell(
+        f'<p style="color:#1c665a;">NEWS BRIEF · {day}</p>'
+        f'<h1 style="font-size:25px;line-height:1.5;">{escape(title)}</h1>' + paragraphs
+        + f'<p><a href="{escape(manage_url, quote=True)}" style="color:#1c665a;">{management_label}</a> · 웹사이트 로그인 필요</p>'
+        + (f'<p style="color:#63716b;">{PREVIEW_NOTICE}</p>' if data.preview else ""))
     message = EmailMessage(policy=SMTP)
     message["From"], message["To"], message["Subject"] = sender, recipient, subject
     identity = hashlib.sha256((data.job_id + "\n" + recipient + "\n" + content_kind).encode()).hexdigest()
