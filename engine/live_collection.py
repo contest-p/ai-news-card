@@ -2,8 +2,10 @@
 
 from dataclasses import dataclass, field
 import hashlib
-import importlib
+import importlib.util
+from pathlib import Path
 import re
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, HTTPRedirectHandler, build_opener
@@ -41,17 +43,40 @@ class NewsSource:
     hosts: tuple[str, ...]
 
 
+# 기사 단위 정책 제외: 소스는 정상 응답했고 해당 기사만 후보 조건을 충족하지 못했다.
+# 정상 수집 후 후보 없음(뉴스 없음 안내)을 막지 않는다. 그 외 코드는 수집 장애로 본다.
+EXCLUSION_CODES = frozenset({"ENTRY_METADATA_INVALID", "ENTRY_PUBLISHED_INVALID",
+                             "CATEGORY_UNMAPPED", "BODY_INVALID"})
+QA_SOURCES_FILE = Path(__file__).resolve().parents[1] / "deployment-qa" / "rss_validator" / "sources.py"
+
+
 @dataclass
 class LiveCollectionResult(CollectionResult):
     source_reports: list[dict] = field(default_factory=list)
     article_sources: dict[str, dict] = field(default_factory=dict)
 
+    @property
+    def collection_succeeded(self) -> bool:
+        # 정책 제외(EXCLUSION_CODES)만 있으면 정상 수집. 소스 장애가 하나라도 있으면 아니다.
+        return self.successful_sources > 0 and self.failed_sources == 0
+
+
+def qa_source_rows() -> list[dict]:
+    # 실행 위치(CWD)와 무관하게 저장소의 QA 목록 파일을 읽는다.
+    spec = importlib.util.spec_from_file_location("qa_rss_sources", QA_SOURCES_FILE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.SOURCES
+
 
 def load_sources() -> list[NewsSource]:
-    rows = importlib.import_module("deployment-qa.rss_validator.sources").SOURCES
+    """엔진 매핑이 없는 새 QA 소스는 허용 도메인 없이 반환해 해당 소스만 실패 처리한다."""
     result = []
-    for row in rows:
-        source_id, category, language, hosts = SOURCE_METADATA[row["name"]]
+    for row in qa_source_rows():
+        if row["name"] in SOURCE_METADATA:
+            source_id, category, language, hosts = SOURCE_METADATA[row["name"]]
+        else:
+            source_id, category, language, hosts = "unmapped:" + row["name"], None, "", ()
         result.append(NewsSource(source_id, row["name"], row["url"], category, language, hosts))
     return result
 
@@ -117,18 +142,36 @@ def error_code(exc, fallback):
 
 
 def collect_live_sources(*, sources=None, max_entries=3, min_body_chars=200,
-                         fetch=download) -> LiveCollectionResult:
-    """소스별 앞 N건만 검사. 게시 시각·본문·분야가 확인된 기사만 Article로 전달."""
+                         fetch=download, deadline=None, clock=time.monotonic) -> LiveCollectionResult:
+    """소스별 앞 N건만 검사. 게시 시각·본문·분야가 확인된 기사만 Article로 전달.
+
+    deadline은 clock 기준 종료 시각(P-06 수집 15분 예산). 초과하면 남은 작업을 멈추고
+    수집 장애로 기록해 정상 뉴스 없음으로 처리되지 않게 한다.
+    """
     if not 1 <= max_entries <= 20 or min_body_chars < 1:
         raise ValueError("기사 수는 1~20, 최소 본문 길이는 양수여야 합니다.")
     result = LiveCollectionResult()
     seen = set()
+
+    def over_budget():
+        return deadline is not None and clock() >= deadline
+
     for source in load_sources() if sources is None else sources:
         report = {"source_id": source.source_id, "publisher": source.name,
                   "feed_url": source.url, "language": source.language,
                   "feed_entries": 0, "checked_entries": 0, "valid_bodies": 0, "collected": 0}
         result.source_reports.append(report)
         issue_start = len(result.issues)
+        if over_budget():
+            result.issues.append(CollectionIssue(source.source_id, None, "COLLECTION_BUDGET_EXCEEDED"))
+            report.update(status="failed", issue_codes=["COLLECTION_BUDGET_EXCEEDED"])
+            result.failed_sources += 1
+            continue
+        if not source.hosts:
+            result.issues.append(CollectionIssue(source.source_id, None, "SOURCE_METADATA_MISSING"))
+            report.update(status="failed", issue_codes=["SOURCE_METADATA_MISSING"])
+            result.failed_sources += 1
+            continue
         try:
             feed = feedparser.parse(fetch(source.url, source))
             if feed.get("bozo") or not feed.get("version"):
@@ -137,9 +180,13 @@ def collect_live_sources(*, sources=None, max_entries=3, min_body_chars=200,
             code = error_code(exc, "FEED")
             result.issues.append(CollectionIssue(source.source_id, None, code))
             report.update(status="failed", issue_codes=[code])
+            result.failed_sources += 1
             continue
         report["feed_entries"] = len(feed.entries)
         for index, entry in enumerate(feed.entries[:max_entries]):
+            if over_budget():
+                result.issues.append(CollectionIssue(source.source_id, index, "COLLECTION_BUDGET_EXCEEDED"))
+                break
             report["checked_entries"] += 1
             try:
                 url = allowed_url(entry["link"], source)
@@ -179,7 +226,11 @@ def collect_live_sources(*, sources=None, max_entries=3, min_body_chars=200,
             seen.add(url)
             report["collected"] += 1
         codes = [issue.code for issue in result.issues[issue_start:]]
-        report.update(status="partial" if codes else "complete", issue_codes=codes)
-        if not codes:
+        failures = [code for code in codes if code not in EXCLUSION_CODES]
+        status = "partial" if failures else ("complete_with_exclusions" if codes else "complete")
+        report.update(status=status, issue_codes=codes)
+        if failures:
+            result.failed_sources += 1
+        else:
             result.successful_sources += 1
     return result

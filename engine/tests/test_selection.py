@@ -49,6 +49,14 @@ class SelectionTests(unittest.TestCase):
         article = replace(self.articles[0], title="가상 ai 기사")
         self.assertEqual(self.select([article], []).selection_reason["matched_keyword"], "ＡＩ")
 
+    def test_title_over_card_limit_is_not_selected(self):
+        # 제목은 원문 그대로이므로 AI 재호출로 고칠 수 없다. 다음 후보를 고른다.
+        long_title = replace(self.articles[0], article_id="long", title="가" * 61,
+                             url="https://example.com/long", published_at=self.scheduled - timedelta(minutes=1))
+        result = self.select([long_title, self.articles[0]], [])
+        self.assertNotEqual(result.article.article_id, "long")
+        self.assertEqual(self.select([long_title], []).status, "no_candidates")
+
     def test_keywords_do_not_escape_interest_categories(self):
         other = replace(self.articles[0], category="politics")
         self.assertEqual(self.select([other], []).status, "no_candidates")

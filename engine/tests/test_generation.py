@@ -31,6 +31,29 @@ class GenerationTests(unittest.TestCase):
                               job_id="test-job", model="test-model", base_url="test-url",
                               client=client or self, store=self.store, **options)
 
+    def test_title_over_limit_blocks_before_any_api_call(self):
+        from dataclasses import replace
+        from engine.article_store import prepare_article
+        article = replace(self.fixture.current.article, title="가" * 61)
+        self.fixture.current = replace(self.fixture.current, article=article,
+                                       content_hash=prepare_article(article)[1])
+        output = self.run_generation()
+        self.assertEqual((output["status"], output["error_code"]), ("blocked", "TITLE_TOO_LONG"))
+        self.assertEqual((output["attempts"], self.calls), (0, 0))
+        self.assertFalse(output["api_called_this_run"])
+
+    def test_numeric_format_is_repaired_in_same_run_without_second_call(self):
+        body = "병역특례는 53년 된 제도입니다."
+        self.fixture.current_body(body)
+        self.fixture.draft["card2"] = None
+        self.fixture.draft["card1"]["sentences"][0]["numbers"] = [
+            {"surface": "53년", "unit": "년", "subject": "병역특례", "as_of": None,
+             "source_article_id": "current", "evidence_quote": "53년 된 제도"}]
+        output = self.run_generation()
+        self.assertEqual((output["status"], output["attempts"], self.calls), ("completed", 1, 1))
+        self.assertEqual(output["result"]["card_data"]["card1"]["sentences"][0]["numbers"][0]["surface"], "53")
+        self.assertIn("NUMBER_SURFACE_UNIT_SEPARATED", output["format_review"]["changes"])
+
     def test_explicit_400_recovery_keeps_attempt_count_and_limit(self):
         class Failing:
             def complete(self, messages):

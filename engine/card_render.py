@@ -2,7 +2,6 @@
 
 import argparse
 import base64
-from datetime import timedelta, timezone
 from html import escape
 import hashlib
 import json
@@ -14,13 +13,35 @@ import subprocess
 import sys
 from urllib.parse import urlsplit
 
-from engine.cards import fields, string
-from engine.selection import canonical_url, parse_timestamp
+from engine.cards import TERM_NAME_MAX_CHARS, fields, string
+from engine.selection import KST, canonical_url, parse_timestamp
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = Path(__file__).parent / "templates" / "card_preview.html"
 TEMPLATE_VERSION = "engine-preview-v1"
-KST = timezone(timedelta(hours=9))
+# CARD_FONT_PATH가 없을 때 찾는 한글 TTF/OTF. GitHub Actions(Ubuntu)는 fonts-nanum 등 설치 필요.
+FONT_CANDIDATES = (
+    Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "NotoSansKR-VF.ttf",
+    Path("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"),
+    Path("/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf"),
+    Path("/usr/share/fonts/opentype/noto/NotoSansKR-Regular.otf"),
+    Path("/Library/Fonts/NotoSansKR-Regular.ttf"),
+)
+
+
+def resolve_font_path(env=None, candidates=FONT_CANDIDATES) -> Path:
+    """명시 설정이 있으면 그 파일만 사용한다. 없으면 OS별 후보 중 존재하는 첫 파일."""
+    env = os.environ if env is None else env
+    configured = env.get("CARD_FONT_PATH", "").strip()
+    if configured:
+        path = Path(configured)
+        if not path.is_file():
+            raise FileNotFoundError("CARD_FONT_NOT_FOUND")
+        return path
+    for path in candidates:
+        if Path(path).is_file():
+            return Path(path)
+    raise FileNotFoundError("CARD_FONT_NOT_FOUND")
 
 
 def card_data_hash(data):
@@ -79,7 +100,7 @@ def validate_render_data(data):
             raise ValueError("CARD_LENGTH_OR_BACKGROUND_INVALID")
         for term in card["terms"]:
             fields(term, ("term", "definition", "source_article_id", "evidence_quote"))
-            string(term["term"], 100)
+            string(term["term"], TERM_NAME_MAX_CHARS)
             string(term["definition"], 100)
             if term["source_article_id"] not in sources:
                 raise ValueError("UNKNOWN_TERM_SOURCE")
@@ -126,9 +147,15 @@ def build_html(data, index, *, font_bytes):
 
 
 def render_card(result, output_dir, *, font_path, node="node"):
+    """생성 작업 기록(completed + ready_for_review)을 받아 렌더링한다."""
     if (result.get("status") != "completed" or result.get("result", {}).get("status") != "ready_for_review"):
         raise ValueError("VALIDATED_CARD_REQUIRED")
-    data = result["result"]["card_data"]
+    return render_card_data(result["result"]["card_data"], output_dir, font_path=font_path, node=node)
+
+
+def render_card_data(data, output_dir, *, font_path, node=None):
+    """검사 완료 카드 데이터 → HTML → PNG. 실패는 예외로 전달하며 재시도는 호출자가 정한다."""
+    node = node or shutil.which("node") or "node"
     validate_render_data(data)
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -160,11 +187,12 @@ def main():
     parser = argparse.ArgumentParser(description="검사 완료 카드 → 임시 템플릿 → PNG")
     parser.add_argument("--input", type=Path, default=ROOT / ".engine-local/live-card/result.json")
     parser.add_argument("--output", type=Path, default=ROOT / ".engine-local/live-card/render")
-    parser.add_argument("--font", type=Path, default=Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/NotoSansKR-VF.ttf")
+    parser.add_argument("--font", type=Path, default=None, help="기본값: CARD_FONT_PATH 또는 OS별 한글 폰트")
     args = parser.parse_args()
     try:
         result = json.loads(args.input.read_text("utf-8"))
-        print(json.dumps(render_card(result, args.output, font_path=args.font,
+        font = args.font or resolve_font_path()
+        print(json.dumps(render_card(result, args.output, font_path=font,
                                      node=shutil.which("node") or "node"), ensure_ascii=False, indent=2))
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         parser.exit(1, f"이미지 변환 실패 ({type(exc).__name__}). 입력·로컬 폰트·Node·Playwright·브라우저 설정을 확인하세요.\n")

@@ -43,8 +43,42 @@ class LiveCollectionTests(unittest.TestCase):
     def test_missing_date_does_not_use_now_or_stop_next_article(self):
         result = self.collect(feed(item(date="") + item(url="https://example.com/news/2")))
         self.assertEqual(len(result.articles), 1)
-        self.assertFalse(result.collection_succeeded)
+        # 게시 시각 누락은 기사 단위 정책 제외다. 소스 장애로 보지 않는다.
+        self.assertTrue(result.collection_succeeded)
         self.assertEqual(result.issues[0].code, "ENTRY_PUBLISHED_INVALID")
+        self.assertEqual(result.source_reports[0]["status"], "complete_with_exclusions")
+
+    def test_policy_exclusions_keep_normal_no_news_possible(self):
+        general = NewsSource("mk", "전체", SOURCE.url, None, "ko", SOURCE.hosts)
+        result = self.collect(feed(item(category="<category>헤드라인</category>")), source=general)
+        self.assertEqual(result.articles, [])
+        self.assertEqual(result.issues[0].code, "CATEGORY_UNMAPPED")
+        self.assertTrue(result.collection_succeeded)
+
+    def test_unknown_qa_source_fails_only_that_source(self):
+        unknown = NewsSource("unknown", "새 소스", "https://example.com/new", None, "ko", ())
+        result = collect_live_sources(sources=[unknown, SOURCE],
+                                      fetch=lambda url, source: feed(item()) if url == source.url else HTML)
+        self.assertEqual(len(result.articles), 1)
+        self.assertEqual(result.source_reports[0]["issue_codes"], ["SOURCE_METADATA_MISSING"])
+        self.assertFalse(result.collection_succeeded)
+
+    def test_collection_budget_stops_and_is_not_success(self):
+        ticks = iter([0, 0, 100, 100, 100, 100])
+        result = collect_live_sources(sources=[SOURCE], max_entries=5, deadline=50,
+                                      clock=lambda: next(ticks),
+                                      fetch=lambda url, source: feed(item() + item(url="https://example.com/news/2"))
+                                      if url == source.url else HTML)
+        self.assertIn("COLLECTION_BUDGET_EXCEEDED", [issue.code for issue in result.issues])
+        self.assertFalse(result.collection_succeeded)
+
+    def test_load_sources_skips_unmapped_names_without_crashing(self):
+        rows = [{"name": "BBC 뉴스 (글로벌)", "url": "http://feeds.bbci.co.uk/news/rss.xml"},
+                {"name": "새 언론사", "url": "https://example.org/rss"}]
+        with patch("engine.live_collection.qa_source_rows", return_value=rows):
+            sources = load_sources()
+        self.assertEqual([row.source_id for row in sources], ["bbc", "unmapped:새 언론사"])
+        self.assertEqual(sources[1].hosts, ())
 
     def test_body_403_does_not_use_rss_summary_and_other_source_continues(self):
         other = NewsSource("other", "다른 소스", "https://example.com/other", "world", "en", SOURCE.hosts)

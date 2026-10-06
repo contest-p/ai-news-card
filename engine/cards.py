@@ -8,10 +8,16 @@ import unicodedata
 
 from engine.article_store import StoredArticle, prepare_article
 from engine.rag import RagResult, past_cutoff
+from engine.selection import CARD_TITLE_MAX_CHARS
 
-NUMBER = re.compile(r"[+-]?\d+(?:,\d{3})*(?:\.\d+)?")
+# 영문·숫자에 붙은 식별자(COVID-19, G7, 5.5의 일부)는 수량으로 보지 않는다.
+NUMBER = re.compile(r"(?:(?<![A-Za-z0-9.,])[+-])?(?<![A-Za-z0-9.,])(?<![A-Za-z]-)\d+(?:,\d{3})*(?:\.\d+)?")
+# 날짜는 시점 표현이다. 발췌 원문 일치로 확인하며 수치 메타데이터 대상에서 뺀다.
+DATE = re.compile(r"\d{4}-\d{1,2}-\d{1,2}|\d{4}\.\s?\d{1,2}\.\s?\d{1,2}\.?"
+                  r"|(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일|\d{4}년\s*\d{1,2}월")
+TERM_NAME_MAX_CHARS = 20  # 프런트 card-template.js와 같은 값. 김현서와 최종 합의 필요.
 UNIT = re.compile(r"(?:%p|%|억원|만원|만명|억명|명|원|개|건|회|배|년|월|일|시간|분|초)")
-REVIEW_VALIDATOR_VERSION = "extractive-review-v2-term-fragments"
+REVIEW_VALIDATOR_VERSION = "extractive-review-v3-dates-term-names"
 # 문장 전체의 의미 판정이 아닌, 명백한 접속형 종결을 거르는 품질 제안.
 INCOMPLETE_TERM_END = re.compile(r"(?:하므로|이므로|으므로|하지만|했지만|하며|으며|하는데|했는데|하고|해서)$")
 
@@ -32,6 +38,13 @@ class CardResult:
 
 def normalized(text):
     return unicodedata.normalize("NFKC", text)
+
+
+def quantity_matches(text):
+    """날짜 구간을 가린 뒤 수량 후보와 바로 뒤의 단위를 돌려준다."""
+    masked = DATE.sub(lambda match: "#" * len(match.group()), text)
+    return [(match.group(), (UNIT.match(masked, match.end()) or [""])[0])
+            for match in NUMBER.finditer(masked)]
 
 
 def fields(value, expected):
@@ -99,12 +112,9 @@ def validate_card(card, sources, current_id, *, background):
         numbers = sentence["numbers"]
         if type(numbers) is not list:
             raise CardInvalid("NUMBERS_INVALID")
-        matches = list(NUMBER.finditer(text))
-        found = [match.group() for match in matches]
-        expected_units = []
-        for match in matches:
-            unit_match = UNIT.match(text, match.end())
-            expected_units.append(unit_match.group() if unit_match else "")
+        matches = quantity_matches(text)
+        found = [surface for surface, _ in matches]
+        expected_units = [unit for _, unit in matches]
         supplied = []
         for number in numbers:
             fields(number, ("surface", "unit", "subject", "as_of", "source_article_id", "evidence_quote"))
@@ -147,8 +157,18 @@ def assemble_cards(draft, current: StoredArticle, rag: RagResult, *, publishers:
         article, digest = prepare_article(current.article)
         if digest != current.content_hash:
             raise CardInvalid("CURRENT_CONTENT_CHANGED")
-        title = string(article.title, 60)
+        title = string(article.title, CARD_TITLE_MAX_CHARS)
         current_sources = {article.article_id: current}
+        if type(draft["card1"]) is dict and type(draft["card1"].get("terms")) is list:
+            kept = []
+            for term in draft["card1"]["terms"]:
+                # 선택 항목인 용어 이름이 템플릿 한도를 넘으면 카드 전체 대신 용어만 생략한다.
+                if (type(term) is dict and type(term.get("term")) is str
+                        and len(normalized(term["term"])) > TERM_NAME_MAX_CHARS):
+                    issues.append("TERM_OMITTED:NAME_TOO_LONG")
+                else:
+                    kept.append(term)
+            draft["card1"]["terms"] = kept
         validate_card(draft["card1"], current_sources, article.article_id, background=False)
         retained = []
         for term in draft["card1"]["terms"]:
@@ -195,3 +215,41 @@ def assemble_cards(draft, current: StoredArticle, rag: RagResult, *, publishers:
             "card1": copy.deepcopy(draft["card1"]), "card2": copy.deepcopy(card2),
             "sources": sources, "ai_generated": True}
     return CardResult("ready_for_review", data, tuple(issues))
+
+
+def repair_numeric_format(draft, current: StoredArticle):
+    """사실 문구는 수정하지 않는다. 수치 필드 형식 보정과 수치 불일치 문장 제외만 허용.
+
+    원문 근거를 먼저 확인한 문장에서만 surface의 단위를 분리하고, 검증된 문장 근거의
+    일부인 수치 근거를 전체 문장 근거로 넓힌다. 그 외 오류는 그대로 예외로 전달한다.
+    """
+    repaired = copy.deepcopy(draft)
+    changes = []
+    retained = []
+    for sentence in repaired["card1"]["sentences"]:
+        quote = sentence["evidence_quote"]
+        if (sentence["source_article_id"] == current.article.article_id
+                and normalized(quote) in normalized(current.article.body)
+                and normalized(sentence["text"]) in normalized(quote)):
+            for number in sentence["numbers"]:
+                surface, unit = number["surface"], number["unit"]
+                match = NUMBER.match(surface)
+                if (match and unit and surface == match.group() + unit
+                        and surface in sentence["text"]):
+                    number["surface"] = match.group()
+                    changes.append("NUMBER_SURFACE_UNIT_SEPARATED")
+                if (number["evidence_quote"] != quote and number["evidence_quote"]
+                        and number["evidence_quote"] in quote):
+                    number["evidence_quote"] = quote
+                    changes.append("NUMBER_QUOTE_EXPANDED_TO_VERIFIED_SENTENCE")
+        try:
+            validate_card({"sentences": [sentence], "terms": []},
+                          {current.article.article_id: current}, current.article.article_id, background=False)
+        except CardInvalid as exc:
+            if not exc.code.startswith("NUMBER_"):
+                raise
+            changes.append("SENTENCE_OMITTED:" + exc.code)
+        else:
+            retained.append(sentence)
+    repaired["card1"]["sentences"] = retained
+    return repaired, list(dict.fromkeys(changes))

@@ -11,16 +11,16 @@ import sys
 
 from engine.article_store import InMemoryArticleRepository
 from engine.chat_client import CodysseyChatClient
-from engine.cards import CardInvalid, NUMBER, assemble_cards, normalized, validate_card
+from engine.cards import CardInvalid, assemble_cards
+from engine.cards import repair_numeric_format as review_numeric_format
 from engine.card_prompt import build_card_messages
 from engine.generation import GenerationBusy, LocalGenerationStore, generate_cards
 from engine.live_collection import collect_live_sources, load_sources
 from engine.rag import RagResult, past_cutoff
-from engine.selection import Article, CollectionUnavailable, parse_timestamp, select_article
+from engine.selection import KST, Article, CollectionUnavailable, parse_timestamp, select_article
 from engine.settings import load_chat_settings
 
 ROOT = Path(__file__).resolve().parents[2] / ".engine-local" / "live-card"
-KST = timezone(timedelta(hours=9))
 
 
 class RecordingClient:
@@ -58,41 +58,6 @@ def prepare_input(*, now, collector=collect_live_sources):
             "publisher": collected.article_sources[article.article_id]["publisher"],
             "selection_reason": selected.selection_reason,
             "collection_issues": [asdict(issue) for issue in collected.issues]}
-
-
-def review_numeric_format(draft, current):
-    """사실 문구는 수정하지 않는다. 수치 필드 형식 보정과 불일치 문장 제외만 허용."""
-    repaired = copy.deepcopy(draft)
-    changes = []
-    retained = []
-    for sentence in repaired["card1"]["sentences"]:
-        # 원문 근거를 먼저 확인한 경우에만 수치 필드 형식을 정리한다.
-        quote = sentence["evidence_quote"]
-        if (sentence["source_article_id"] == current.article.article_id
-                and normalized(quote) in normalized(current.article.body)
-                and normalized(sentence["text"]) in normalized(quote)):
-            for number in sentence["numbers"]:
-                surface, unit = number["surface"], number["unit"]
-                match = NUMBER.match(surface)
-                if (match and unit and surface == match.group() + unit
-                        and surface in sentence["text"]):
-                    number["surface"] = match.group()
-                    changes.append("NUMBER_SURFACE_UNIT_SEPARATED")
-                if (number["evidence_quote"] != quote and number["evidence_quote"]
-                        and number["evidence_quote"] in quote):
-                    number["evidence_quote"] = quote
-                    changes.append("NUMBER_QUOTE_EXPANDED_TO_VERIFIED_SENTENCE")
-        try:
-            validate_card({"sentences": [sentence], "terms": []},
-                          {current.article.article_id: current}, current.article.article_id, background=False)
-        except CardInvalid as exc:
-            if not exc.code.startswith("NUMBER_"):
-                raise
-            changes.append("SENTENCE_OMITTED:" + exc.code)
-        else:
-            retained.append(sentence)
-    repaired["card1"]["sentences"] = retained
-    return repaired, list(dict.fromkeys(changes))
 
 
 def generate_from_input(payload, *, client, model, base_url, store, draft_path=None):
