@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from engine.card_render import ROOT, card_data_hash, validate_render_data
-from engine.mail_assembly import InlineImage, NewsMailData, assemble_mail
+from engine.mail_assembly import MAIL_TEMPLATE_VERSION, InlineImage, NewsMailData, assemble_mail
 
 
 def approved_images(data, render_root):
@@ -71,7 +71,7 @@ def main():
         (output_dir / "preview.html").write_text(preview, encoding="utf-8")
         (output_dir / "images-blocked.html").write_text(blocked, encoding="utf-8")
         (output_dir / "text-fallback.txt").write_text(plain, encoding="utf-8")
-        report = {"mode": "local_mail_preview", "subject": subject, "mail_template_version": "news-mail-preview-v1",
+        report = {"mode": "local_mail_preview", "subject": subject, "mail_template_version": MAIL_TEMPLATE_VERSION,
                   "content_kind": "news_card", "inline_image_count": len(images),
                   "message_bytes": len(message.as_bytes()), "issues": issues,
                   "eml": str(output_dir / "briefing.eml"), "preview": str(output_dir / "preview.html"),

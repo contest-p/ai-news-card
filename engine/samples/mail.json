@@ -1,0 +1,10 @@
+{
+  "demo_only": true,
+  "sender_email": "briefing@example.invalid",
+  "recipient_email": "reader@example.invalid",
+  "web_origin": "https://briefing.example.invalid",
+  "feedback_token": "TOKEN_FIXTURE_ONLY",
+  "selection_reason": {"type": "keyword", "label": "관심 키워드와 관련된 기사", "matched_keyword": "금리"},
+  "subscription_start_date": "2026-10-11",
+  "subscription_end_date_exclusive": "2026-10-18"
+}

@@ -134,7 +134,7 @@ BBC는 `world`, SBS는 `politics`, 경향신문은 `it_science`로 매핑합니�
 다른 PC의 최초 준비는 다음과 같습니다. 패키지·모델 설치에 인터넷과 디스크 공간이 필요합니다. 이후 기본 시연은 캐시만 읽습니다. 모델 캐시는 Git에서 제외된 `.venv/model-cache`에 저장합니다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r engine/requirements-rag.txt
+.\.venv\Scripts\python.exe -m pip install -r engine/dependencies/requirements-rag.txt
 .\.venv\Scripts\python.exe -m engine.demos.rag_demo --download-model
 ```
 
@@ -150,7 +150,7 @@ BBC는 `world`, SBS는 `politics`, 경향신문은 `it_science`로 매핑합니�
 
 ## 세 번째 기능: 기사 저장·URL 중복 방지·내용 버전
 
-DB는 사용자의 최신 결정에 따라 **Cloud Firestore**로 개발합니다. [DB 변경 기록](../firebase/DB_CHANGE.md)에 공통 PRD와의 차이를 기록했습니다. 공통 원문·구독·발송 정책은 변경하지 않았습니다.
+DB는 사용자의 최신 결정에 따라 **Cloud Firestore**로 개발합니다. [DB 변경 기록](firebase/DB_CHANGE.md)에 공통 PRD와의 차이를 기록했습니다. 공통 원문·구독·발송 정책은 변경하지 않았습니다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m engine.demos.store_demo
@@ -158,7 +158,7 @@ DB는 사용자의 최신 결정에 따라 **Cloud Firestore**로 개발합니�
 
 현재 시연은 메모리 샘플 저장소를 사용합니다. 최초 2개 저장 → 동일 기사 재저장 2개 unchanged → 본문 수정 시 버전 2 → 이전 본문 보존 → 오래된 관측은 stale → 저장 기사에서 선별까지 확인합니다. 프로그램 종료 후에는 데이터가 사라집니다. Firestore 프로젝트에 아직 연결하지 않았습니다.
 
-실제 연결용 Firestore 어댑터도 작성했고 당시 총 48개 테스트가 통과했습니다. 새 환경에서는 `python -m pip install -r engine/requirements.txt`로 SDK를 포함한 의존성을 설치합니다. [Firestore 문서 구조·어댑터 안내](../firebase/README.md)에 기술 구조를 설명했습니다. FR-08 중 저장·내용 버전 부분이며 Firestore 임베딩 저장 연결은 후속 범위입니다.
+실제 연결용 Firestore 어댑터도 작성했고 당시 총 48개 테스트가 통과했습니다. 새 환경에서는 `python -m pip install -r engine/dependencies/requirements.txt`로 SDK를 포함한 의존성을 설치합니다. [Firestore 문서 구조·어댑터 안내](firebase/README.md)에 기술 구조를 설명했습니다. FR-08 중 저장·내용 버전 부분이며 Firestore 임베딩 저장 연결은 후속 범위입니다.
 
 ## 두 번째 기능: 로컬 RSS 수집 → 선별
 
@@ -177,7 +177,7 @@ DB는 사용자의 최신 결정에 따라 **Cloud Firestore**로 개발합니�
 
 ```powershell
 py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r engine/requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r engine/dependencies/requirements.txt
 .\.venv\Scripts\python.exe -m engine.demos.collect_demo
 ```
 
