@@ -1,20 +1,30 @@
-# Secret configuration (keep only placeholder examples in Git)
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
 .env
 .env.*
 !.env.example
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.engine-local/
+# Firebase / service account keys
+*firebase*.json
+*serviceAccount*.json
+serviceAccountKey.json
 
-# Frontend dependencies and generated files
+# Node / frontend
 node_modules/
 dist/
-.vercel/
+build/
 
-# Firebase server credentials
-ai-news-card-firebase-adminsdk.json
-firebase-service-account.json
+# OS / editor
+.DS_Store
+.vscode/
