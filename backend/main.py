@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 from zoneinfo import ZoneInfo
-
+from pathlib import Path
 
 # --------------------------------------------------
 # 환경변수 로드
@@ -51,19 +51,36 @@ app.add_middleware(
 # Firebase Admin 초기화
 # --------------------------------------------------
 def get_firebase_cred_path():
-    env_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY")
+    # 1. 환경변수에서 먼저 찾기
+    env_path = (
+        os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or os.getenv("FIREBASE_CREDENTIALS")
+        or os.getenv("FIREBASE_CREDENTIALS_PATH")
+    )
 
     if env_path and os.path.exists(env_path):
         return env_path
 
+    # 2. backend 폴더와 프로젝트 루트 둘 다 확인
+    backend_dir = Path(__file__).resolve().parent
+    root_dir = backend_dir.parent
+
     candidates = [
-        "firebase-service-account.json",
-        "ai-news-card-firebase-adminsdk.json",
+        backend_dir / "firebase-service-account.json",
+        root_dir / "firebase-service-account.json",
+        backend_dir / "ai-news-card-firebase-adminsdk.json",
+        root_dir / "ai-news-card-firebase-adminsdk.json",
     ]
 
     for path in candidates:
-        if os.path.exists(path):
-            return path
+        if path.exists():
+            return str(path)
+
+    # 3. 실제 긴 파일명도 자동 탐색
+    for folder in [root_dir, backend_dir]:
+        matches = list(folder.glob("ai-news-card-firebase*.json"))
+        if matches:
+            return str(matches[0])
 
     raise FileNotFoundError("Firebase 서비스 계정 JSON 파일을 찾을 수 없습니다.")
 
