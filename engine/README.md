@@ -91,6 +91,10 @@ RSS 수집 → 기사 저장·선별 → 과거 기사 검색(RAG) → AI 카드
 
 ## 실행
 
+2026-10-07 연결 작업: Firestore 발송·생성·MIME 저장소, Backend HTTP 어댑터, 테스트 구독 1개용 연결 배치 도구를 추가했습니다. [연결 실행 안내](docs/firebase/CONNECTED_ENGINE.md)와 [백엔드 API 규격 제안](docs/firebase/ENGINE_API_CONTRACT.md)을 참고하세요. 실제 계정 인증과 팀 API 연결 검증은 코드 테스트와 별도입니다.
+
+기존 팀 DB 연결을 시작하는 도구를 추가했습니다. `engine.tools.db_check`는 사용자·구독·기사 컬렉션을 제한 조회하고 개인정보 없이 연결 준비 상태를 요약합니다. `engine.tools.collect_to_firestore`는 수집 결과를 기존 기사 저장 어댑터에 연결하며 `--live --write --project`를 지정할 때만 실제 기사를 저장합니다. 실행법과 현재 구독 필드의 한계는 [DB 연결 시작 안내](docs/firebase/ENGINE_DB_START.md)를 참고하세요. 실제 DB 연결에는 서버 자격 증명이 필요합니다.
+
 모든 명령은 저장소 루트에서 실행합니다. 아래는 이번에 준비한 `engine/.venv/` 기준입니다. 기존 루트 `.venv/`를 사용하는 환경에서는 Python 실행 경로를 바꾸면 됩니다. 폴더 정리 단계에서는 코드를 유지했고, 이후 메일 기능 구현 단계에서 관련 코드와 테스트를 수정했습니다.
 
 Python 의존성 설치: `python -m pip install -r engine/dependencies/requirements.txt`

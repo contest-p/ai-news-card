@@ -55,6 +55,9 @@ class LocalGenerationStore:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
+    def load(self, path):
+        return json.loads(path.read_text("utf-8")) if path.exists() else None
+
 
 def generate_cards(current, rag, *, publishers, work_date_kst: date, job_id, model, base_url,
                    client, store: LocalGenerationStore, retry_blocked=False):
@@ -71,7 +74,7 @@ def generate_cards(current, rag, *, publishers, work_date_kst: date, job_id, mod
         return {"generation_key": key, "attempts": 0, "status": "blocked", "result": None,
                 "error_code": "TITLE_TOO_LONG", "api_called_this_run": False, "reused": False}
     with store.locked(key) as path:
-        state = json.loads(path.read_text("utf-8")) if path.exists() else {
+        state = store.load(path) or {
             "generation_key": key, "attempts": 0, "status": "pending", "result": None,
             "error_code": None}
         if (state.get("generation_key") != key or type(state.get("attempts")) is not int
