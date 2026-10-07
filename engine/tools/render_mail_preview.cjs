@@ -7,7 +7,7 @@ async function main() {
   const root = process.argv[2];
   if (!root) throw new Error('MAIL_PREVIEW_DIRECTORY_REQUIRED');
   const report = JSON.parse(fs.readFileSync(path.join(root, 'mail_result.json'), 'utf8'));
-  const expectedText = { news_card: '텍스트로 읽기', no_news: '오늘은 새 브리핑이 없습니다',
+  const expectedText = { news_card_1: '오늘의 핵심', news_card_2: '오늘의 핵심', no_news: '오늘은 새 브리핑이 없습니다',
     end_notice: '뉴스 브리핑 구독이 종료되었습니다' }[report.content_kind];
   if (!expectedText) throw new Error('MAIL_CONTENT_KIND_INVALID');
   const candidates = [process.env.CARD_BROWSER_PATH,

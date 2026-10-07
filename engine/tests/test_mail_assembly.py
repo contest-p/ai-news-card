@@ -10,7 +10,7 @@ import unittest
 
 from engine.card_render import card_data_hash
 from engine.cards import assemble_cards
-from engine.mail_assembly import InlineImage, NewsMailData, assemble_mail
+from engine.mail_assembly import InlineImage, NewsMailData, WebMailLinks, assemble_mail
 from engine.demos.mail_demo import approved_images
 from engine.tests import test_cards
 
@@ -47,7 +47,7 @@ class MailAssemblyTests(unittest.TestCase):
             for sentence in card["sentences"]:
                 self.assertIn(sentence["text"], plain)
         self.assertIn("근거 보도일:", plain)
-        self.assertIn("AI 편집", html)
+        self.assertIn("AI 생성", html)
         self.assertIn("텍스트로 읽기", html)
         self.assertEqual(parsed["To"], "one@example.invalid")
 
@@ -58,6 +58,30 @@ class MailAssemblyTests(unittest.TestCase):
         self.assertNotIn("<img", html)
         self.assertIn(self.data["card1"]["sentences"][0]["text"], html)
         self.assertEqual(len(list(message.iter_attachments())), 0)
+
+    def test_preview_label_is_local_only_and_safe_numeric_area_is_omitted(self):
+        preview = self.mail()
+        preview_html = preview.get_body(preferencelist=("html",)).get_content()
+        self.assertIn("메일 수신 예시", preview_html)
+        real = self.mail(preview=False, web_links=WebMailLinks("https://briefing.example.invalid"),
+                         feedback_token="TOKEN_FIXTURE_ONLY")
+        real_html = real.get_body(preferencelist=("html",)).get_content()
+        self.assertNotIn("메일 수신 예시", real_html)
+        self.assertNotIn("비교 수치", real_html)
+        self.assertNotIn("12건", real_html)
+
+    def test_maximum_content_lengths_and_terms_remain_readable(self):
+        self.data["title"] = "제" * 60
+        self.data["card1"]["sentences"] = [{**self.data["card1"]["sentences"][0], "text": "설" * 400}]
+        self.data["card1"]["terms"] = [
+            {"term": "용" * 20, "definition": "풀" * 100, "source_article_id": self.data["article_id"], "evidence_quote": ""},
+            {"term": "어" * 20, "definition": "뜻" * 100, "source_article_id": self.data["article_id"], "evidence_quote": ""},
+        ]
+        html = self.mail().get_body(preferencelist=("html",)).get_content()
+        self.assertIn("제" * 60, html)
+        self.assertIn("설" * 400, html)
+        self.assertIn("풀" * 100, html)
+        self.assertIn("뜻" * 100, html)
 
     def test_personal_reason_is_escaped_and_recipients_are_separate(self):
         reason = {"type": "keyword", "label": "관심 키워드", "matched_keyword": "<script>"}

@@ -13,7 +13,7 @@ from engine.card_render import kst_time, validate_render_data
 from engine.cards import string
 from engine.selection import SelectionResult, canonical_url
 
-MAIL_TEMPLATE_VERSION = "briefing-mail-v2"
+MAIL_TEMPLATE_VERSION = "briefing-mail-v3"
 PREVIEW_NOTICE = "로컬 검수용 메일입니다. 실제 구독·피드백 저장과 연결되지 않은 미리보기입니다."
 
 
@@ -168,13 +168,16 @@ def management_url(data):
 
 
 def mail_shell(inner_html):
-    """세 메일 유형이 공유하는 600px 표 레이아웃. inner_html은 호출자가 이스케이프한다."""
+    """세 메일 유형이 공유하는 반응형 테이블 레이아웃. inner_html은 호출자가 이스케이프한다."""
     return ('<!doctype html><html lang="ko"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
-            '<body style="margin:0;background:#eef0eb;color:#18272b;font-family:Arial,\'Malgun Gothic\',sans-serif;">'
-            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 12px;">'
-            '<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fff;">'
-            '<tr><td style="padding:28px 24px;border-top:6px solid #1c665a;overflow-wrap:anywhere;">'
+            '<body style="margin:0;background:#f1f4f7;color:#192333;font-family:Arial,\'Malgun Gothic\',sans-serif;">'
+            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#f1f4f7"><tr><td align="center" style="padding:24px 12px;">'
+            '<table role="presentation" width="680" cellspacing="0" cellpadding="0" style="width:100%;max-width:680px;background:#fff;border:1px solid #e8ebef;border-radius:18px;box-shadow:0 8px 28px rgba(28,43,63,.08);">'
+            '<tr><td style="padding:28px 30px;overflow-wrap:anywhere;word-break:break-word;">'
+            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-bottom:1px solid #e8ebef;margin-bottom:24px;"><tr>'
+            '<td style="padding:0 0 18px;color:#cf6800;font-size:21px;font-weight:bold;">✉ 뉴스 브리핑</td>'
+            '<td align="right" style="padding:0 0 18px;color:#738091;font-size:13px;">&nbsp;</td></tr></table>'
             + inner_html + '</td></tr></table></td></tr></table></body></html>')
 
 
@@ -204,13 +207,14 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
     title = data.card_data["title"]
     day = data.scheduled_date_kst.strftime("%Y.%m.%d")
     subject = f"[뉴스 브리핑] {day} · 오늘의 관심 뉴스"
-    plain = [subject, "", title, "기사 게시: " + kst_time(data.card_data["published_at"]),
-             "선택 이유: " + reason, "AI 편집 · 원문 발췌", ""]
+    plain = [subject, "", "오늘의 관심 뉴스", "발송 기준일: " + day,
+             "기사 게시일: " + kst_time(data.card_data["published_at"]), "선택 이유: " + reason,
+             "오늘의 핵심 · AI 생성", title, ""]
     sections = []
     for number, card in enumerate((data.card_data["card1"], data.card_data["card2"]), 1):
         if card is None:
             continue
-        label = "핵심 뉴스" if number == 1 else "배경 이해"
+        label = "오늘의 핵심" if number == 1 else "배경 정보"
         plain.append(label)
         lines = card_text(data.card_data, card, background=number == 2)
         plain.extend(lines + [""])
@@ -219,37 +223,50 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
             image_html = (f'<img src="cid:{images[number].content_id}" width="600" '
                           f'alt="{escape(label + ": " + title + ". 아래에 전체 텍스트 설명이 있습니다.", quote=True)}" '
                           'style="display:block;width:100%;max-width:600px;height:auto;border:0;margin:0 0 24px;">')
-        paragraphs = "".join('<p style="margin:0 0 16px;font-size:16px;line-height:1.8;overflow-wrap:anywhere;white-space:pre-wrap;">'
-                             + escape(line) + "</p>" for line in lines)
-        sections.append(image_html + f'<h2 style="margin:0 0 16px;font-size:20px;">{label} · 텍스트로 읽기</h2>' + paragraphs)
+        paragraphs = "".join('<tr><td style="padding:0 0 13px;font-size:16px;line-height:1.85;color:#344154;overflow-wrap:anywhere;word-break:break-word;white-space:pre-wrap;">'
+                             + escape(line) + "</td></tr>" for line in lines)
+        sections.append('<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:18px 0;border:1px solid #e8ebef;border-radius:14px;"><tr><td style="padding:18px;">'
+                        f'<table role="presentation" width="100%"><tr><td style="padding:0 0 14px;"><span style="display:inline-block;background:{"#ef850e" if number == 1 else "#4388e8"};color:#fff;border-radius:20px;padding:7px 12px;font-size:13px;font-weight:bold;">{label}</span>'
+                        '<span style="float:right;background:#f1f3f6;color:#687587;border-radius:20px;padding:6px 10px;font-size:12px;">AI 생성</span></td></tr></table>'
+                        + (image_html + '<p style="margin:0 0 16px;font-size:12px;color:#738091;">텍스트로 읽기 · 이미지가 보이지 않아도 아래 설명을 확인할 수 있습니다.</p>' if image_html else '')
+                        + '<table role="presentation" width="100%" cellspacing="0" cellpadding="0">' + paragraphs + '</table></td></tr></table>')
     links = []
     for source in data.card_data["sources"]:
         url = https_url(source["url"])
         plain.extend(["출처: " + source["publisher"] + " · " + kst_time(source["published_at"]), url])
-        links.append(f'<p style="margin:0 0 12px;"><a href="{escape(url, quote=True)}" style="color:#1c665a;">'
-                     f'{escape(source["publisher"])} · 원문 보기</a><br>{escape(kst_time(source["published_at"]))}</p>')
+        links.append(f'<tr><td style="padding:8px 0;font-size:13px;line-height:1.7;color:#526071;overflow-wrap:anywhere;word-break:break-word;">'
+                     f'{escape(source["publisher"])} · {escape(kst_time(source["published_at"]))}<br><a href="{escape(url, quote=True)}" style="color:#cf6800;text-decoration:underline;">원문 보기</a></td></tr>')
+    article_source = next(row for row in data.card_data["sources"] if row["article_id"] == data.card_data["article_id"])
+    article_url = https_url(article_source["url"])
+    plain.extend(["", "원문 읽기: " + article_url])
     management = ""
     if manage_url:
         plain.extend(["", "구독 관리 (웹사이트 로그인 필요): " + manage_url])
-        management = f'<p><a href="{escape(manage_url, quote=True)}" style="color:#1c665a;">구독 관리</a> · 웹사이트 로그인 필요</p>'
+        management = f'<a href="{escape(manage_url, quote=True)}" style="color:#1769c2;text-decoration:underline;">웹사이트에서 구독 관리</a> · 로그인 필요'
     feedback_html = ""
     if feedback:
         plain.extend(["", "이번 브리핑은 어떠셨나요? 링크를 연 뒤 화면에서 제출해야 평가가 저장됩니다."])
-        feedback_html = '<p>이번 브리핑은 어떠셨나요? 화면에서 제출해야 평가가 저장됩니다.</p><p>'
+        feedback_html = '<tr><td align="center" style="padding:16px 0 8px;font-size:16px;font-weight:bold;">오늘의 브리핑이 도움이 됐나요?</td></tr><tr><td align="center" style="padding-bottom:16px;">'
         for rating, label in (("up", "도움이 됐어요"), ("down", "아쉬웠어요")):
             plain.append(label + ": " + feedback[rating])
-            feedback_html += f'<a href="{escape(feedback[rating], quote=True)}" style="color:#1c665a;">{label}</a> &nbsp; '
-        feedback_html += "</p>"
+            feedback_html += f'<a href="{escape(feedback[rating], quote=True)}" style="display:inline-block;margin:4px;padding:10px 16px;border:1px solid #cbd3dd;border-radius:9px;color:#526071;text-decoration:none;">{label}</a>'
+        feedback_html += '</td></tr>'
     notice = PREVIEW_NOTICE if data.preview else ""
     if notice:
         plain.extend(["", notice])
+    preview_tag = '<span style="display:inline-block;background:#f1f3f6;color:#687587;padding:5px 9px;border-radius:14px;font-size:11px;">메일 수신 예시</span>' if data.preview else ""
     html = mail_shell(
-        f'<p style="font-size:13px;color:#1c665a;letter-spacing:2px;">NEWS BRIEF · {day}</p>'
-        f'<h1 style="font-size:25px;line-height:1.5;margin:16px 0;overflow-wrap:anywhere;">{escape(title)}</h1>'
-        f'<p style="font-size:14px;color:#52635b;line-height:1.8;">기사 게시 · {escape(kst_time(data.card_data["published_at"]))}<br>'
-        f'선택 이유 · {escape(reason)}<br>AI 편집 · 원문 발췌</p>'
-        + "".join(sections) + '<div style="border-top:1px solid #d3d9d0;padding-top:20px;font-size:14px;line-height:1.7;">'
-        + "".join(links) + feedback_html + management + (f'<p style="color:#63716b;">{notice}</p>' if notice else "") + '</div>')
+        f'<p style="margin:0 0 8px;color:#cf6800;font-size:13px;font-weight:bold;">오늘의 관심 뉴스 {preview_tag}</p>'
+        f'<h1 style="font-size:30px;line-height:1.3;margin:0 0 8px;color:#192333;overflow-wrap:anywhere;word-break:break-word;">오늘의 관심 뉴스</h1>'
+        f'<p style="font-size:15px;color:#738091;line-height:1.7;margin:0 0 14px;">발송 기준일 · {day}<br>기사 게시일 · {escape(kst_time(data.card_data["published_at"]))}</p>'
+        f'<p style="display:inline-block;background:#fff4e7;border-radius:20px;padding:10px 14px;font-size:14px;line-height:1.6;color:#744514;margin:0 0 18px;overflow-wrap:anywhere;">선택 이유 · {escape(reason)}</p>'
+        f'<h2 style="font-size:21px;line-height:1.4;margin:8px 0 12px;overflow-wrap:anywhere;word-break:break-word;">{escape(title)}</h2>'
+        + "".join(sections)
+        + f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:4px 0 20px;"><a href="{escape(article_url, quote=True)}" style="display:block;max-width:440px;background:#f5820b;color:#fff;text-decoration:none;text-align:center;font-size:17px;font-weight:bold;padding:15px 18px;border-radius:12px;">원문 읽기 ↗</a></td></tr></table>'
+        + '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #e8ebef;border-bottom:1px solid #e8ebef;padding:10px 0;font-size:13px;line-height:1.7;">'
+        + "".join(links) + feedback_html + '</table><p style="margin:16px 0 8px;font-size:13px;">' + management + '</p>'
+        + f'<p style="margin:0;color:#738091;font-size:12px;line-height:1.7;">AI가 기사 내용을 요약·설명했습니다. 정확한 맥락은 원문을 확인해 주세요.</p>'
+        + (f'<p style="color:#738091;font-size:12px;">{escape(notice)}</p>' if notice else ""))
     message = EmailMessage(policy=SMTP)
     message["From"], message["To"], message["Subject"] = sender, recipient, subject
     # 수신자별 고유 Message-ID. 발송 시각/발송 상태는 여기서 만들지 않는다.
@@ -300,11 +317,15 @@ def assemble_notice(data: NoNewsMailData | EndNoticeMailData):
     if data.preview:
         plain.extend(["", PREVIEW_NOTICE])
     paragraphs = "".join(f'<p style="font-size:16px;line-height:1.8;">{escape(line)}</p>' for line in lines)
+    preview_tag = '<span style="display:inline-block;background:#f1f3f6;color:#687587;padding:5px 9px;border-radius:14px;font-size:11px;">메일 수신 예시</span>' if data.preview else ""
     html = mail_shell(
-        f'<p style="color:#1c665a;">NEWS BRIEF · {day}</p>'
-        f'<h1 style="font-size:25px;line-height:1.5;">{escape(title)}</h1>' + paragraphs
-        + f'<p><a href="{escape(manage_url, quote=True)}" style="color:#1c665a;">{management_label}</a> · 웹사이트 로그인 필요</p>'
-        + (f'<p style="color:#63716b;">{PREVIEW_NOTICE}</p>' if data.preview else ""))
+        f'<p style="margin:0 0 8px;color:#cf6800;font-size:13px;font-weight:bold;">뉴스 브리핑 {preview_tag}</p>'
+        f'<h1 style="font-size:28px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word;">{escape(title)}</h1>'
+        f'<p style="color:#738091;font-size:14px;">발송 기준일 · {day}</p>'
+        + paragraphs
+        + f'<p style="margin:22px 0;"><a href="{escape(manage_url, quote=True)}" style="display:inline-block;background:#f5820b;color:#fff;padding:13px 20px;border-radius:10px;text-decoration:none;font-weight:bold;">{management_label}</a></p>'
+        + '<p style="color:#738091;font-size:13px;">뉴스 브리핑 구독을 웹사이트에서 관리할 수 있습니다.</p>'
+        + (f'<p style="color:#738091;font-size:12px;">{escape(PREVIEW_NOTICE)}</p>' if data.preview else ""))
     message = EmailMessage(policy=SMTP)
     message["From"], message["To"], message["Subject"] = sender, recipient, subject
     identity = hashlib.sha256((data.job_id + "\n" + recipient + "\n" + content_kind).encode()).hexdigest()

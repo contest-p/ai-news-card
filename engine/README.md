@@ -36,7 +36,7 @@ RSS 수집 → 기사 저장·선별 → 과거 기사 검색(RAG) → AI 카드
 |---|---|---|
 | 1 | 실제 DB·Backend 연결 (2026-10-07) | `JobStore`·생성 작업 저장소·기사/임베딩의 Firestore 구현, `EngineGateway` 함수(대상 목록·발송 가능 이유·피드백 토큰) 합의, 메일 보관 위치·기한 |
 | 2 | 운영 실행 진입점·Actions | 실제 객체를 조립하는 실행 스크립트, 매시간 7분 예약(루트 workflow는 윤지민과 공유 후 추가), Secrets·폰트·Chromium 설치 |
-| 3 | 카드 템플릿 교체 | `frontend/card-template.js` 연결(현재는 엔진 임시 템플릿). 김현서와 렌더 방식 합의 |
+| 3 | 카드 템플릿 연결 | 완료: `card_render.py`가 `frontend/card-template.js`와 `frontend/styles.css`를 사용해 발송용 CID PNG를 렌더링 |
 | 4 | 실제 통합 검증 | 가입 → 카드·메일 수신 → 피드백 → 해제·만료, 중단·동시 실행·재시도, 실제 메일 앱·사용자 테스트 |
 
 공유 캐싱·의미 기반 사건 묶기·자동 타 보도 대조는 후순위입니다. 상세는 [구현 현황](docs/IMPLEMENTATION_STATUS.md)을 확인하세요.
@@ -85,7 +85,7 @@ RSS 수집 → 기사 저장·선별 → 과거 기사 검색(RAG) → AI 카드
 | 위치 | 보관·정리 기준 |
 |---|---|
 | `samples/`, `tests/` 안의 가상 데이터 | 회귀 테스트·재현에 필요하므로 프로젝트 완성 후에도 보관 |
-| `engine/.engine-local/previews/mail-types/` | 이번 3종 메일의 가상 미리보기만 저장. 검수 후 삭제·재생성 가능 |
+| `engine/.engine-local/previews/mail-types/` | 1장·2장 뉴스, 뉴스 없음, 종료 안내 가상 미리보기. 검수 후 삭제·재생성 가능 |
 | 저장소 루트 `.engine-local/` | 기존 생성 결과와 AI 호출·SMTP 상태 기록이 함께 있음. 통째 삭제하면 중복 방지 기록도 사라질 수 있음 |
 | `engine/.venv/` | 이번 검증용 Python 환경. Git 제외, 소스·샘플과 별도 |
 
@@ -100,12 +100,19 @@ RAG 추가 의존성 설치: `python -m pip install -r engine/dependencies/requi
 ```powershell
 # 자동 테스트: 외부 API·DB·실제 메일을 사용하지 않음
 .\engine\.venv\Scripts\python.exe -B -m unittest discover -s engine/tests -v
+node --test frontend/tests/card-template.test.mjs
 
 # DB·AI·SMTP 없이 배치 전체 실행 (결과: engine/.engine-local/previews/batch-demo/)
 .\engine\.venv\Scripts\python.exe -B -m engine.demos.batch_demo
 
-# DB·AI·SMTP 없이 세 종류의 메일 미리보기 생성
+# DB·AI·SMTP 없이 4종 메일 MIME·카드 이미지 미리보기 생성
 .\engine\.venv\Scripts\python.exe -B -m engine.demos.mail_types_demo
+
+# 유형별 HTML 렌더 검사 (PC 800px·모바일 390px, 외부 요청 차단)
+node engine/tools/render_mail_preview.cjs engine/.engine-local/previews/mail-types/news_card_1
+node engine/tools/render_mail_preview.cjs engine/.engine-local/previews/mail-types/news_card_2
+node engine/tools/render_mail_preview.cjs engine/.engine-local/previews/mail-types/no_news
+node engine/tools/render_mail_preview.cjs engine/.engine-local/previews/mail-types/end_notice
 
 # 가상 기사 선별
 .\engine\.venv\Scripts\python.exe -m engine.demos.demo
@@ -123,12 +130,13 @@ node engine/tools/render_mail_preview.cjs .engine-local/live-card/mail
 
 ## 검토 결과와 남은 연결
 
-2026-10-06 PRD 대조 및 다음 작업은 [구현 현황](docs/IMPLEMENTATION_STATUS.md)을 확인하세요. DB 연결 전 단계로 뉴스·뉴스 없음·자연 만료 안내의 메일 조립과 피드백 링크를 추가했습니다. 실제 예약 발송·DB·토큰 발급 연결은 남아 있습니다.
+PRD 대조 및 남은 연결은 [구현 현황](docs/IMPLEMENTATION_STATUS.md)을 확인하세요. 뉴스·뉴스 없음·자연 만료의 MIME 조립과 PNG·피드백 링크가 발송 파이프라인에 연결되어 있습니다. Firestore·예약 실행·운영 토큰 발급은 별도 통합 작업입니다.
 
-새 3종 메일은 외부 호출 없이 `.\engine\.venv\Scripts\python.exe -B -m engine.demos.mail_types_demo`로 확인할 수 있습니다. 출력은 `engine/.engine-local/previews/mail-types/`에 모이며 생성·전송 상태 기록과 분리됩니다. 이번에 준비한 테스트 환경은 `engine/.venv/`입니다. 기존 문서의 루트 `.venv/`를 사용하는 경우 해당 Python으로도 실행할 수 있습니다.
+4종 메일 미리보기는 `.\engine\.venv\Scripts\python.exe -B -m engine.demos.mail_types_demo`로 확인할 수 있습니다. 출력은 `engine/.engine-local/previews/mail-types/`에 모이며 생성·전송 상태 기록과 분리됩니다. 이번에 준비한 테스트 환경은 `engine/.venv/`입니다. 기존 문서의 루트 `.venv/`를 사용하는 경우 해당 Python으로도 실행할 수 있습니다.
 
 - 수집·선별·근거 검증·메일 조립 및 전송 중복 방지에 대한 자동 테스트가 있습니다. 테스트 통과는 운영 환경 검증을 대신하지 않습니다.
-- **이미지:** `card_render.py`는 아직 `templates/card_preview.html`을 사용합니다. 프런트의 `frontend/card-template.js`가 추가됐지만 엔진에는 연결되지 않았습니다.
+- **이미지:** `card_render.py`는 `frontend/card-template.js` 및 `frontend/styles.css`에서 1·2번 카드 이미지를 렌더링합니다. 가상 미리보기에서 이미지 포함·차단, 800px·390px 표시를 확인합니다.
+- **메일 앱:** Gmail·Outlook 실제 수신은 확인하지 않았습니다. 브라우저 기반 로컬 HTML 렌더링만 검증했습니다.
 - **생성 이력:** `generation.py`의 파일 저장·잠금은 단일 PC 개발용입니다. 여러 서버·GitHub Actions 실행 간 공유되는 Firestore 선점·호출 횟수 기록은 별도 연결해야 합니다.
 - **Firestore:** 기사 저장 어댑터가 있지만 실제 DB 연결 검증은 남아 있습니다. `list_current()`는 개발용 제한 조회이며 운영용 날짜·분야 조회가 필요합니다.
 - **수집:** 경향신문 표본은 게시 시각 누락으로 후보에서 제외됐습니다. RSS가 열린다는 이유만으로 공개 카테고리 사용을 승인하지 않습니다.

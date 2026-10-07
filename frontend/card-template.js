@@ -66,15 +66,21 @@ function oneCard(data, key, number, sources) {
   return `<article class="news-template-card" data-card-number="${number}"><div class="news-template-top"><span class="news-template-label ${past ? "past" : "current"}">${label}</span><span class="news-template-ai">AI 생성</span></div><div class="news-template-body">${sentences}</div>${terms ? `<section class="news-terms"><h3>기사 속 용어</h3>${terms}</section>` : ""}<div class="news-template-sources">${sourceMarkup}</div></article>`;
 }
 
-export function renderCardTemplate(data) {
+export function renderCardTemplate(data, options = {}) {
   if (!data || typeof data !== "object") throw new TypeError("카드 데이터가 필요합니다.");
+  const selected = options.cardNumber;
+  if (selected !== undefined && selected !== 1 && selected !== 2) throw new RangeError("cardNumber는 1 또는 2여야 합니다.");
   if (count(data.title) < 1 || count(data.title) > 60) throw new RangeError("제목은 NFKC 기준 1~60자여야 합니다.");
   if (data.ai_generated !== true) throw new TypeError("AI 생성 여부가 true인 카드만 표시할 수 있습니다.");
   validateCard(data, "card1", 2);
   validateCard(data, "card2", 0);
   const sources = sourceIndex(data.sources);
   const articleDate = formatDate(data.published_at);
-  return `<section class="news-template" aria-label="뉴스 카드"><header class="news-template-header"><div class="news-template-brand"><span class="brand-mark" aria-hidden="true"></span><strong>뉴스 브리핑</strong></div>${articleDate ? `<span class="news-template-date">기사 게시 · ${safeText(articleDate)}</span>` : ""}</header><h1 class="news-template-title">${safeText(data.title)}</h1>${oneCard(data, "card1", 1, sources)}${oneCard(data, "card2", 2, sources)}<p class="news-template-disclaimer">AI가 기사 내용을 요약·설명했습니다. 정확한 맥락은 원문을 확인해 주세요.</p></section>`;
+  const cardMarkup = selected === 1 ? oneCard(data, "card1", 1, sources)
+    : selected === 2 ? oneCard(data, "card2", 2, sources)
+      : oneCard(data, "card1", 1, sources) + oneCard(data, "card2", 2, sources);
+  if (selected === 2 && !data.card2) throw new TypeError("배경 카드가 없습니다.");
+  return `<section class="news-template" aria-label="뉴스 카드"><header class="news-template-header"><div class="news-template-brand"><span class="brand-mark" aria-hidden="true"></span><strong>뉴스 브리핑</strong></div>${articleDate ? `<span class="news-template-date">기사 게시 · ${safeText(articleDate)}</span>` : ""}</header><h1 class="news-template-title">${safeText(data.title)}</h1>${cardMarkup}<p class="news-template-disclaimer">AI가 기사 내용을 요약·설명했습니다. 정확한 맥락은 원문을 확인해 주세요.</p></section>`;
 }
 
 export const cardTemplateFixture = Object.freeze({

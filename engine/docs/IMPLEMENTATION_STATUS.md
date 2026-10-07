@@ -12,7 +12,7 @@
 | FR-10 개인화 선별 | 키워드 OR 우선·분야 대체·24시간·동점 규칙, **60자 초과 제목 제외** | 실제 스냅샷 공급 **(Backend)** |
 | FR-11 RAG | 로컬 검색, `card_builder.no_evidence_search` 기본값(카드 2 생략) | Firestore 벡터 검색 함수로 교체 **(DB)**, QA 관련성 평가 |
 | FR-12 생성·검증 | 2회 한도, **제목 초과 시 API 호출 전 차단**, **같은 응답의 수치 형식 보정을 생성 단계에서 수행**, 날짜·식별자 오인 수정 | 생성 작업 저장소 Firestore화 **(DB)**, 사람 검수 정책 합의 |
-| FR-14 이미지 | **최초+1회 렌더 후 텍스트 전환**(`card_images.py`), OS별 폰트 탐색 | `frontend/card-template.js` 연결, 실제 메일 클라이언트 검증 |
+| FR-14 이미지 | **최초+1회 렌더 후 텍스트 전환**(`card_images.py`), `frontend/card-template.js`·`styles.css` 연결, 실제 메일 클라이언트 검증 |
 | FR-15 작업·선점 | **고정 ID, 기한, 선점·claim_token, 상태 전이, 멈춘 작업 복구·unknown 처리**(`delivery.py`) | 같은 계약의 Firestore 트랜잭션 구현 **(DB)** |
 | FR-16 SMTP | **운영 전송·결과 분류**(`smtp_sender.py`), 최초 포함 3회, 직전 상태 재확인(`pipeline.py`) | 실제 Gmail 계정 연결 테스트 |
 | FR-06 종료 안내 | 자연 만료만 발송, 24시간 기한, 작업 유일성 | 만료 대상 목록 함수 **(Backend)** |
