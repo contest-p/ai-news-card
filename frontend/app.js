@@ -24,6 +24,7 @@ let draftSettings = null;
 let isMenuOpen = false;
 let savingSubscription = false;
 let loginPending = false;
+let cancellingSubscription = false;
 
 const esc = (value = "") => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const categoryName = (id) => CATEGORY_LABELS[id] || id;
@@ -143,7 +144,7 @@ function managePage(){
   return `<section class="container page"><p class="eyebrow">구독 관리</p><h1 class="page-title">내 뉴스 구독</h1><div class="status-pill" style="margin:18px 0">구독 중 · ${DURATION_LABELS[sub.duration_days]||"기간 확인 중"}</div>${errorNotice()}<section class="card manage-settings"><h2 class="section-heading">현재 구독 설정</h2><div class="details-grid"><div class="detail"><label>관심 분야</label><strong>${settings.categories.map(categoryName).map(esc).join(" · ")||"설정 정보 없음"}</strong></div><div class="detail"><label>관심 키워드</label><strong>${settings.keywords.map(esc).join(" · ")||"없음"}</strong></div><div class="detail"><label>수신 시간 · 한국 시간</label><strong>${Number.isInteger(settings.delivery_hour_kst)?hourLabel(settings.delivery_hour_kst):"설정 정보 없음"}</strong></div><div class="detail"><label>첫 발송 예정</label><strong>${sub.first_delivery_at?dateTimeKst(sub.first_delivery_at):dateLabel(sub.first_delivery_date)}</strong></div><div class="detail"><label>마지막 구독 날짜</label><strong>${dateLabel(sub.last_delivery_date)}</strong></div></div><p class="notice" style="margin-top:18px">구독 설정 변경은 준비 중입니다. 현재 설정으로 브리핑을 받아볼 수 있어요.</p></section><section class="card cancel-band" style="margin-top:22px"><div><h3>구독을 중단하고 싶으신가요?</h3><p>구독을 해제하면 이후 브리핑 발송이 중단됩니다.</p></div><button class="btn btn-outline" data-action="open-cancel">구독 해제</button></section></section>`;
 }
 function endedPageContent(sub){return `<section class="container page center"><div class="success-art ended-art"><div class="art-orbit"><span class="spark one">✦</span><div class="mail-illustration" style="background:linear-gradient(145deg,#8abdf7,#498ce4)"></div><div class="art-badge" style="background:var(--orange)">✓</div></div></div><h1 class="page-title">구독이 ${sub.status==="cancelled"?"해제":"종료"}되었어요</h1><p class="page-subtitle">관심 뉴스가 다시 필요할 때 새 구독을 시작하세요.</p><div class="card" style="max-width:560px;margin:28px auto;padding:24px;text-align:left"><div class="status-pill">${sub.status==="cancelled"?"구독 해제":"구독 종료"}</div><h2 class="section-heading" style="margin-top:15px">이전 구독</h2><div class="pending-line"><span>관심 분야</span><strong>${(sub.current_settings?.categories||sub.settings?.categories||[]).map(categoryName).map(esc).join(" · ")||"-"}</strong></div><div class="pending-line"><span>구독 기간</span><strong>${DURATION_LABELS[sub.duration_days]||"-"}</strong></div><div class="pending-line"><span>마지막 구독 날짜</span><strong>${dateLabel(sub.last_delivery_date||sub.last_date)}</strong></div></div><div class="notice" style="max-width:420px;margin:0 auto 20px">다시 구독하면 다음 날부터 새 브리핑을 받아요.</div><button class="btn btn-primary" data-go="/privacy">새 구독 시작하기 <span>→</span></button><p><a href="/service" data-go="/service" class="small muted">서비스 소개 보기</a></p></section>`;}
-function endedPage(){return shell(endedPageContent(currentSubscription||{}),"manage");}
+function endedPage(){return shell(currentSubscription?.status&&currentSubscription.status!=="active"?endedPageContent(currentSubscription):managePage(),"manage");}
 function cancelModal(){return `<div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="cancel-title"><button class="modal-close" aria-label="닫기" data-action="close-modal">×</button><div style="font-size:48px;margin:0 auto 12px;color:var(--blue)">✉</div><h2 id="cancel-title">구독을 해제할까요?</h2><p>해제하면 이후 뉴스 메일 발송이 중단돼요.<br>이미 발송된 메일은 회수할 수 없어요.</p><p class="small" style="margin-top:13px">필요할 때 다시 구독할 수 있어요.</p><div class="modal-actions"><button class="btn btn-quiet" data-action="close-modal">계속 구독하기</button><button class="btn btn-danger" data-action="confirm-cancel">구독 해제하기</button></div></section></div>`;}
 
 function feedbackPage(){const token=feedbackToken;return `<main class="feedback-page"><article class="feedback-shell"><div class="email-brand"><a class="brand" href="/" data-go="/"><span class="brand-mark" aria-hidden="true"></span>뉴스 브리핑</a><span>메일 수신 예시</span></div><h1 class="feedback-title">오늘의 브리핑</h1><div class="feedback-date">원문과 함께 읽는 뉴스 브리핑</div>${token?`<div id="feedback-status" class="notice blue" style="margin-top:16px">링크를 확인하고 있어요.</div>`:`<div class="notice" style="margin-top:16px">피드백 링크를 다시 열면 평가를 남길 수 있어요. 보안상 링크 토큰은 브라우저에 저장하지 않습니다.</div>`}<section class="news-card"><span class="card-label">오늘의 핵심</span><span class="ai-label">AI 생성</span><h2>관심 뉴스의 핵심을 이 카드에서 확인해요</h2><p>실제 뉴스 카드의 제목과 설명, 근거 시점은 검증된 기사 데이터에서 전달됩니다. 원문과 함께 내용을 확인해 주세요.</p><div class="notice blue">과거 정보는 근거 날짜 또는 보도일을 함께 표시합니다.</div><p class="small muted">출처와 기사 링크는 실제 브리핑 데이터로 채워집니다.</p></section><div class="center"><strong>오늘의 브리핑이 도움이 됐나요?</strong></div><div class="feedback-vote"><button class="vote" data-rating="up" disabled>👍 도움이 됐어요</button><button class="vote" data-rating="down" disabled>👎 아쉬웠어요</button></div><div id="feedback-reasons" class="hidden"><label class="form-label" for="reasons">어떤 점이 그랬나요? (선택)</label><div class="chips" style="padding:0;margin-bottom:12px">${["관심과 달라요","이해하기 어려워요","배경이 도움돼요","정확성이 걱정돼요"].map((x)=>`<label class="chip"><input type="checkbox" name="reason" value="${esc(x)}">${esc(x)}</label>`).join("")}</div><label class="form-label" for="feedback-comment">짧은 의견 (선택)</label><textarea id="feedback-comment" class="textarea" maxlength="500" placeholder="의견을 적어 주세요"></textarea><button class="btn btn-primary btn-block" style="margin-top:14px" data-action="submit-feedback">평가 제출하기</button></div><div class="divider"></div><p class="center"><a href="/manage" data-go="/manage" style="color:var(--blue)">웹사이트에서 구독 관리하기 →</a></p><p class="small muted center">AI가 기사 내용을 요약·설명했어요. 정확한 맥락은 원문을 확인해 주세요.</p></article></main>`;}
@@ -166,7 +167,7 @@ async function onAction(action){if(action==="menu"){isMenuOpen=!isMenuOpen;rende
   } catch(error){pageError=error.status?error.message:(error.code?loginError(error):error.message);render();}
   finally {loginPending=false;}
   return;
-}if(action==="consent-next"){setup.consent=Boolean(document.querySelector("#consent")?.checked);if(!setup.consent)return;go("/subscribe");return;}if(action==="add-keyword"){const input=document.querySelector("#keyword-input");addKeyword(input?.value,setup.keywords);if(input)input.value="";render();return;}if(action==="create-subscription"){await createSubscription();return;}if(action==="reload-subscription"){await reloadSubscription();return;}if(action==="open-cancel"){document.body.insertAdjacentHTML("beforeend",cancelModal());document.querySelector('[data-action="close-modal"]')?.focus();return;}if(action==="close-modal"){document.querySelector(".modal-backdrop")?.remove();return;}if(action==="confirm-cancel"){await cancelSubscription();return;}if(action==="submit-feedback"){await submitFeedback();}}
+}if(action==="consent-next"){setup.consent=Boolean(document.querySelector("#consent")?.checked);if(!setup.consent)return;go("/subscribe");return;}if(action==="add-keyword"){const input=document.querySelector("#keyword-input");addKeyword(input?.value,setup.keywords);if(input)input.value="";render();return;}if(action==="create-subscription"){await createSubscription();return;}if(action==="reload-subscription"){await reloadSubscription();return;}if(action==="open-cancel"){openCancelModal();return;}if(action==="close-modal"){document.querySelector(".modal-backdrop")?.remove();return;}if(action==="confirm-cancel"){await cancelSubscription();return;}if(action==="submit-feedback"){await submitFeedback();}}
 
 function addKeyword(raw,list){const value=(raw||"").normalize("NFKC").trim();const length=[...value].length;if(length<1||length>20){toast("키워드는 1~20자로 입력해 주세요.");return;}if(list.length>=5){toast("키워드는 최대 5개까지 추가할 수 있어요.");return;}if(list.includes(value)){toast("이미 추가한 키워드예요.");return;}list.push(value);}
 function uuid(){return crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;}
@@ -207,17 +208,30 @@ function normalizeSubscription(data){
   const settings=sub.current_settings||sub.settings||{categories:sub.categories||[],keywords:sub.keywords||[],delivery_hour_kst:sub.delivery_hour_kst};
   return {...sub,current_settings:settings,first_delivery_date:first,last_delivery_date:sub.last_delivery_date||last,first_delivery_at:sub.first_delivery_at||(first&&Number.isInteger(settings.delivery_hour_kst)?`${first}T${String(settings.delivery_hour_kst).padStart(2,"0")}:00:00+09:00`:null)};
 }
+function openCancelModal(){
+  if(document.querySelector(".modal-backdrop"))return;
+  document.body.insertAdjacentHTML("beforeend",cancelModal());
+  const modal=document.querySelector(".modal-backdrop");
+  modal.querySelectorAll("[data-action]").forEach((button)=>button.addEventListener("click",()=>onAction(button.dataset.action)));
+  modal.querySelector('[data-action="close-modal"]')?.focus();
+}
+
 async function cancelSubscription(){
+  if(cancellingSubscription)return;
+  cancellingSubscription=true;
+  const button=document.querySelector('[data-action="confirm-cancel"]');
+  if(button)button.disabled=true;
   try{
     const data=await api("/subscriptions/cancel",{method:"PATCH"});
     currentSubscription=normalizeSubscription(data);
     document.querySelector(".modal-backdrop")?.remove();
     await go("/ended");
   }catch(error){document.querySelector(".modal-backdrop")?.remove();pageError=error.message;render();}
+  finally{cancellingSubscription=false;if(button)button.disabled=false;}
 }
 
 function consumeFeedbackToken(){if(currentPath()!=="/feedback")return;const params=new URLSearchParams(location.hash.slice(1));feedbackToken=params.get("t");initialFeedbackRating=["up","down"].includes(params.get("rating"))?params.get("rating"):null;if(location.hash)history.replaceState(null,"",location.pathname+location.search);}
-async function resolveFeedback(){if(!feedbackToken)return;try{const data=await api("/feedback/resolve",{method:"POST",body:{token:feedbackToken}});const status=document.querySelector("#feedback-status");if(!data?.valid){if(status)status.className="notice error";if(status)status.textContent="피드백 링크가 만료되었거나 유효하지 않습니다.";feedbackToken=null;return;}if(status){status.className="notice blue";status.textContent="브리핑을 확인했어요. 아래에서 평가를 선택해 주세요.";}document.querySelectorAll("[data-rating]").forEach((b)=>b.disabled=false);if(initialFeedbackRating)chooseRating(initialFeedbackRating);}catch(error){const status=document.querySelector("#feedback-status");if(status){status.className="notice error";status.textContent=error.message;}feedbackToken=null;}}
+async function resolveFeedback(){if(!feedbackToken)return;if(catalog.capabilities.feedback===false){const status=document.querySelector("#feedback-status");if(status){status.className="notice";status.textContent="피드백 기능은 준비 중입니다. 구독 관리는 아래 링크에서 이용할 수 있어요.";}return;}try{const data=await api("/feedback/resolve",{method:"POST",body:{token:feedbackToken}});const status=document.querySelector("#feedback-status");if(!data?.valid){if(status)status.className="notice error";if(status)status.textContent="피드백 링크가 만료되었거나 유효하지 않습니다.";feedbackToken=null;return;}if(status){status.className="notice blue";status.textContent="브리핑을 확인했어요. 아래에서 평가를 선택해 주세요.";}document.querySelectorAll("[data-rating]").forEach((b)=>b.disabled=false);if(initialFeedbackRating)chooseRating(initialFeedbackRating);}catch(error){const status=document.querySelector("#feedback-status");if(status){status.className="notice error";status.textContent=error.message;}feedbackToken=null;}}
 let chosenRating=null;
 function chooseRating(value){chosenRating=value;document.querySelectorAll("[data-rating]").forEach((b)=>b.classList.toggle("selected",b.dataset.rating===value));document.querySelector("#feedback-reasons")?.classList.remove("hidden");}
 async function submitFeedback(){if(!feedbackToken||!chosenRating){toast("평가를 선택해 주세요.");return;}const reasons=[...document.querySelectorAll('input[name="reason"]:checked')].map((el)=>el.value);const comment=document.querySelector("#feedback-comment")?.value||"";try{await api("/feedback",{method:"POST",body:{token:feedbackToken,rating:chosenRating,reasons,comment}});feedbackToken=null;app.innerHTML=`<main class="feedback-page"><section class="feedback-shell center"><div class="feature-icon" style="margin:0 auto 16px">✓</div><h1 class="page-title" style="font-size:32px">의견을 보내주셔서 감사합니다</h1><p class="page-subtitle">남겨주신 피드백은 브리핑을 개선하는 데 활용할게요.</p></section></main>`;}catch(error){toast(error.message);}}
@@ -225,7 +239,7 @@ function toast(message){document.querySelector(".toast")?.remove();const node=do
 
 async function init(){
   consumeFeedbackToken();
-  if(pageFromPath()==="feedback"){render();await resolveFeedback();return;}
+  if(pageFromPath()==="feedback"){render();if(BASE)await loadCatalog();await resolveFeedback();return;}
   if(BASE)await loadCatalog();
   await getSession();
   await renderRoute();
