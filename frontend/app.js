@@ -15,6 +15,7 @@ let session = null;
 let catalog = { categories: [], durations: [7, 14, 28], consent_version: "", capabilities: {} };
 let currentSubscription = null;
 let pageError = "";
+let subscriptionReloading = false;
 let feedbackToken = null;
 let initialFeedbackRating = null;
 let subscriptionAttempt = null;
@@ -38,6 +39,14 @@ const currentPath = () => location.pathname.replace(/\/+$/, "") || "/";
 const pageFromPath = () => ({ "/": "home", "/login": "login", "/privacy": "privacy", "/subscribe": "setup", "/complete": "complete", "/manage": "manage", "/ended": "ended", "/feedback": "feedback", "/service": "service" })[currentPath()] || "home";
 async function renderRoute() {
   const path = currentPath();
+  if (pageFromPath() === "setup") {
+    render();
+    if (BASE) {
+      await loadCatalog();
+      if (currentPath() === path) render();
+    }
+    return;
+  }
   if (["manage", "ended", "complete"].includes(pageFromPath()) && session) await refreshSubscription();
   if (currentPath() === path) render();
 }
@@ -128,7 +137,7 @@ function completePage(){const sub=currentSubscription||{};const c=sub.current_se
 
 function managePage(){
   const sub=currentSubscription;
-  if(!sub?.status)return `<section class="container page center"><h1 class="page-title">내 구독을 확인해요</h1><p class="page-subtitle">현재 구독이 없습니다. 새 구독을 시작할 수 있어요.</p>${errorNotice()}<button class="btn btn-primary" data-go="/privacy">새 구독 시작하기</button><button class="btn btn-quiet" data-action="reload-subscription">다시 불러오기</button></section>`;
+  if(!sub?.status)return `<section class="container page empty-subscription"><section class="card empty-subscription-hero"><div class="empty-subscription-copy"><p class="eyebrow">나만의 뉴스 브리핑</p><h1 class="page-title">첫 브리핑을<br>준비해 볼까요<span class="orange-dot">?</span></h1><p class="page-subtitle">관심 분야와 받는 시간을 정하면, 선택한 뉴스의 핵심을 이메일로 보내드려요.</p>${errorNotice()}<div class="hero-actions"><button class="btn btn-primary" data-go="/privacy">새 구독 시작하기 <span>→</span></button><button class="btn btn-quiet" data-action="reload-subscription" ${subscriptionReloading?"disabled":""}>${subscriptionReloading?"불러오는 중…":"다시 불러오기"}</button></div><p class="small muted empty-subscription-note" aria-live="polite">${subscriptionReloading?"구독 상태를 확인하고 있어요.":"구독 설정은 언제든지 관리할 수 있어요."}</p></div><div class="empty-subscription-art"><img src="/assets/empty-subscription.png" alt="뉴스 카드가 담긴 봉투에서 빼꼼 나온 주황색 캐릭터"></div></section><section class="empty-subscription-steps" aria-label="구독 시작 순서"><article><span>01</span><div><strong>관심 분야를 골라요</strong><p>궁금한 주제를 선택해요.</p></div></article><i aria-hidden="true">→</i><article><span>02</span><div><strong>받는 시간을 정해요</strong><p>하루 한 번 받을 시간을 정해요.</p></div></article><i aria-hidden="true">→</i><article><span>03</span><div><strong>메일로 브리핑을 받아요</strong><p>핵심 내용을 카드로 읽어요.</p></div></article></section><p class="empty-service-link"><a href="/service" data-go="/service">서비스 이용 방법 보기 <span>→</span></a></p></section>`;
   if(sub.status!=="active")return endedPageContent(sub);
   const settings=sub.current_settings;
   return `<section class="container page"><p class="eyebrow">구독 관리</p><h1 class="page-title">내 뉴스 구독</h1><div class="status-pill" style="margin:18px 0">구독 중 · ${DURATION_LABELS[sub.duration_days]||"기간 확인 중"}</div>${errorNotice()}<section class="card manage-settings"><h2 class="section-heading">현재 구독 설정</h2><div class="details-grid"><div class="detail"><label>관심 분야</label><strong>${settings.categories.map(categoryName).map(esc).join(" · ")||"설정 정보 없음"}</strong></div><div class="detail"><label>관심 키워드</label><strong>${settings.keywords.map(esc).join(" · ")||"없음"}</strong></div><div class="detail"><label>수신 시간 · 한국 시간</label><strong>${Number.isInteger(settings.delivery_hour_kst)?hourLabel(settings.delivery_hour_kst):"설정 정보 없음"}</strong></div><div class="detail"><label>첫 발송 예정</label><strong>${sub.first_delivery_at?dateTimeKst(sub.first_delivery_at):dateLabel(sub.first_delivery_date)}</strong></div><div class="detail"><label>마지막 구독 날짜</label><strong>${dateLabel(sub.last_delivery_date)}</strong></div></div><p class="notice" style="margin-top:18px">구독 설정 변경은 준비 중입니다. 현재 설정으로 브리핑을 받아볼 수 있어요.</p></section><section class="card cancel-band" style="margin-top:22px"><div><h3>구독을 중단하고 싶으신가요?</h3><p>구독을 해제하면 이후 브리핑 발송이 중단됩니다.</p></div><button class="btn btn-outline" data-action="open-cancel">구독 해제</button></section></section>`;
@@ -157,7 +166,7 @@ async function onAction(action){if(action==="menu"){isMenuOpen=!isMenuOpen;rende
   } catch(error){pageError=error.status?error.message:(error.code?loginError(error):error.message);render();}
   finally {loginPending=false;}
   return;
-}if(action==="consent-next"){setup.consent=Boolean(document.querySelector("#consent")?.checked);if(!setup.consent)return;go("/subscribe");return;}if(action==="add-keyword"){const input=document.querySelector("#keyword-input");addKeyword(input?.value,setup.keywords);if(input)input.value="";render();return;}if(action==="create-subscription"){await createSubscription();return;}if(action==="reload-subscription"){await refreshSubscription();render();return;}if(action==="open-cancel"){document.body.insertAdjacentHTML("beforeend",cancelModal());document.querySelector('[data-action="close-modal"]')?.focus();return;}if(action==="close-modal"){document.querySelector(".modal-backdrop")?.remove();return;}if(action==="confirm-cancel"){await cancelSubscription();return;}if(action==="submit-feedback"){await submitFeedback();}}
+}if(action==="consent-next"){setup.consent=Boolean(document.querySelector("#consent")?.checked);if(!setup.consent)return;go("/subscribe");return;}if(action==="add-keyword"){const input=document.querySelector("#keyword-input");addKeyword(input?.value,setup.keywords);if(input)input.value="";render();return;}if(action==="create-subscription"){await createSubscription();return;}if(action==="reload-subscription"){await reloadSubscription();return;}if(action==="open-cancel"){document.body.insertAdjacentHTML("beforeend",cancelModal());document.querySelector('[data-action="close-modal"]')?.focus();return;}if(action==="close-modal"){document.querySelector(".modal-backdrop")?.remove();return;}if(action==="confirm-cancel"){await cancelSubscription();return;}if(action==="submit-feedback"){await submitFeedback();}}
 
 function addKeyword(raw,list){const value=(raw||"").normalize("NFKC").trim();const length=[...value].length;if(length<1||length>20){toast("키워드는 1~20자로 입력해 주세요.");return;}if(list.length>=5){toast("키워드는 최대 5개까지 추가할 수 있어요.");return;}if(list.includes(value)){toast("이미 추가한 키워드예요.");return;}list.push(value);}
 function uuid(){return crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;}
@@ -188,6 +197,7 @@ async function refreshSubscription(){
   try{const data=await api("/subscriptions/me");currentSubscription=normalizeSubscription(data);pageError="";}
   catch(error){pageError=error.status===404?"":error.message;}
 }
+async function reloadSubscription(){if(subscriptionReloading)return;subscriptionReloading=true;pageError="";render();try{await refreshSubscription();if(!pageError)toast(currentSubscription?.status?"구독 정보를 새로 불러왔어요.":"현재 등록된 구독이 없어요.");}finally{subscriptionReloading=false;render();}}
 function normalizeSubscription(data){
   const sub=data?.subscription??data?.current??data;
   if(!sub?.status)return null;
