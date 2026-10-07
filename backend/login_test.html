@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -12,20 +13,24 @@
       padding: 20px;
       line-height: 1.5;
     }
+
     h1, h2 {
       margin-top: 24px;
     }
+
     .card {
       border: 1px solid #ddd;
       border-radius: 10px;
       padding: 16px;
       margin-bottom: 16px;
     }
+
     label {
       display: block;
       margin-top: 10px;
       font-weight: bold;
     }
+
     input, textarea, button {
       width: 100%;
       box-sizing: border-box;
@@ -33,23 +38,27 @@
       padding: 10px;
       font-size: 14px;
     }
+
     textarea {
-      min-height: 120px;
+      min-height: 140px;
       resize: vertical;
       font-family: monospace;
     }
+
     .btn-row {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 10px;
       margin-top: 12px;
     }
+
     .btn-row-3 {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 10px;
       margin-top: 12px;
     }
+
     button {
       cursor: pointer;
       border: none;
@@ -57,31 +66,40 @@
       background: #2563eb;
       color: white;
     }
+
     button:hover {
       background: #1d4ed8;
     }
+
     .danger {
       background: #dc2626;
     }
+
     .danger:hover {
       background: #b91c1c;
     }
+
     .gray {
       background: #4b5563;
     }
+
     .gray:hover {
       background: #374151;
     }
+
     .success {
       background: #16a34a;
     }
+
     .success:hover {
       background: #15803d;
     }
+
     .small {
       font-size: 13px;
       color: #555;
     }
+
     pre {
       background: #111827;
       color: #e5e7eb;
@@ -91,12 +109,20 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+
     .status {
       font-weight: bold;
       margin-top: 8px;
     }
+
+    code {
+      background: #f3f4f6;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
   </style>
 </head>
+
 <body>
   <h1>Firebase 로그인 + FastAPI 테스트</h1>
   <p class="small">
@@ -137,16 +163,30 @@
     </div>
 
     <label for="subscriptionBody">POST /subscriptions/save 요청 본문(JSON)</label>
-    <textarea id="subscriptionBody">
-{
-  "plan": "basic"
-}
-    </textarea>
+    <textarea id="subscriptionBody">{
+  "category": "AI",
+  "keywords": ["LLM", "ChatGPT", "인공지능"],
+  "send_time": "08:00",
+  "duration_weeks": 1,
+  "agreed_privacy": true
+}</textarea>
 
-    <div class="btn-row">
-      <button id="saveSubBtn">POST /subscriptions/save</button>
-      <button id="cancelSubBtn" class="danger">PATCH /subscriptions/cancel</button>
-    </div>
+    <button id="saveSubBtn" class="success">POST /subscriptions/save</button>
+
+    <hr style="margin: 20px 0;" />
+
+    <label for="subscriptionId">PATCH /subscriptions/cancel 구독 ID</label>
+    <input
+      id="subscriptionId"
+      type="text"
+      placeholder="GET /subscriptions/me 응답의 id 또는 subscription_id 입력"
+    />
+
+    <p class="small">
+      구독 저장 또는 조회 성공 시 가능한 경우 구독 ID가 자동으로 채워집니다.
+    </p>
+
+    <button id="cancelSubBtn" class="danger">PATCH /subscriptions/cancel</button>
   </div>
 
   <div class="card">
@@ -185,6 +225,7 @@
     const authStatusEl = document.getElementById("authStatus");
     const resultEl = document.getElementById("result");
     const subscriptionBodyEl = document.getElementById("subscriptionBody");
+    const subscriptionIdEl = document.getElementById("subscriptionId");
 
     const signupBtn = document.getElementById("signupBtn");
     const loginBtn = document.getElementById("loginBtn");
@@ -205,19 +246,24 @@
 
     function showError(title, error) {
       let msg = error?.message || error;
+
       if (error?.responseData) {
         msg += "\n\n" + JSON.stringify(error.responseData, null, 2);
       }
+
       resultEl.textContent = `${title}\n\n${msg}`;
     }
 
     async function getIdTokenOrThrow() {
       const user = auth.currentUser;
+
       if (!user) {
         throw new Error("먼저 로그인하세요.");
       }
+
       const token = await user.getIdToken(true);
       idTokenEl.value = token;
+
       return token;
     }
 
@@ -252,6 +298,83 @@
       return data;
     }
 
+    function validateSubscriptionBody(body) {
+      if (!body.category) {
+        throw new Error("category가 필요합니다.");
+      }
+
+      if (!Array.isArray(body.keywords)) {
+        throw new Error("keywords는 배열이어야 합니다. 예: [\"LLM\", \"ChatGPT\"]");
+      }
+
+      if (body.keywords.length === 0) {
+        throw new Error("keywords는 최소 1개 이상이어야 합니다.");
+      }
+
+      if (!body.send_time) {
+        throw new Error("send_time이 필요합니다. 예: \"08:00\"");
+      }
+
+      if (![1, 2, 4].includes(Number(body.duration_weeks))) {
+        throw new Error("duration_weeks는 1, 2, 4 중 하나여야 합니다.");
+      }
+
+      if (body.agreed_privacy !== true) {
+        throw new Error("agreed_privacy는 true여야 합니다.");
+      }
+    }
+
+    function extractSubscriptionId(data) {
+      if (!data || typeof data !== "object") {
+        return "";
+      }
+
+      if (data.subscription_id) return data.subscription_id;
+      if (data.subscriptionId) return data.subscriptionId;
+      if (data.id) return data.id;
+
+      if (data.subscription) {
+        return extractSubscriptionId(data.subscription);
+      }
+
+      if (Array.isArray(data)) {
+        const activeItem = data.find(item => item?.status === "active") || data[0];
+        return extractSubscriptionId(activeItem);
+      }
+
+      if (Array.isArray(data.subscriptions)) {
+        const activeItem =
+          data.subscriptions.find(item => item?.status === "active") ||
+          data.subscriptions[0];
+
+        return extractSubscriptionId(activeItem);
+      }
+
+      if (Array.isArray(data.items)) {
+        const activeItem =
+          data.items.find(item => item?.status === "active") ||
+          data.items[0];
+
+        return extractSubscriptionId(activeItem);
+      }
+
+      if (data.data) {
+        return extractSubscriptionId(data.data);
+      }
+
+      return "";
+    }
+
+    function autoFillSubscriptionId(data) {
+      const subscriptionId = extractSubscriptionId(data);
+
+      if (subscriptionId) {
+        subscriptionIdEl.value = subscriptionId;
+      }
+
+      return subscriptionId;
+    }
+
     onAuthStateChanged(auth, async (user) => {
       if (user) {
         const token = await user.getIdToken();
@@ -274,6 +397,7 @@
 
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const token = await userCredential.user.getIdToken();
+
         idTokenEl.value = token;
 
         showResult("회원가입 성공", {
@@ -296,6 +420,7 @@
 
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const token = await userCredential.user.getIdToken();
+
         idTokenEl.value = token;
 
         showResult("로그인 성공", {
@@ -322,6 +447,7 @@
         const data = await apiFetch("/me", {
           method: "GET"
         });
+
         showResult("GET /me 성공", data);
       } catch (error) {
         showError("GET /me 실패", error);
@@ -333,6 +459,7 @@
         const data = await apiFetch("/users/sync", {
           method: "POST"
         });
+
         showResult("POST /users/sync 성공", data);
       } catch (error) {
         showError("POST /users/sync 실패", error);
@@ -344,7 +471,13 @@
         const data = await apiFetch("/subscriptions/me", {
           method: "GET"
         });
-        showResult("GET /subscriptions/me 성공", data);
+
+        const subscriptionId = autoFillSubscriptionId(data);
+
+        showResult("GET /subscriptions/me 성공", {
+          auto_filled_subscription_id: subscriptionId || null,
+          response: data
+        });
       } catch (error) {
         showError("GET /subscriptions/me 실패", error);
       }
@@ -353,11 +486,14 @@
     saveSubBtn.addEventListener("click", async () => {
       try {
         let body;
+
         try {
           body = JSON.parse(subscriptionBodyEl.value);
         } catch (e) {
           throw new Error("구독 저장 JSON 형식이 올바르지 않습니다.");
         }
+
+        validateSubscriptionBody(body);
 
         const data = await apiFetch("/subscriptions/save", {
           method: "POST",
@@ -367,7 +503,12 @@
           body: JSON.stringify(body)
         });
 
-        showResult("POST /subscriptions/save 성공", data);
+        const subscriptionId = autoFillSubscriptionId(data);
+
+        showResult("POST /subscriptions/save 성공", {
+          auto_filled_subscription_id: subscriptionId || null,
+          response: data
+        });
       } catch (error) {
         showError("POST /subscriptions/save 실패", error);
       }
@@ -375,9 +516,22 @@
 
     cancelSubBtn.addEventListener("click", async () => {
       try {
-        const data = await apiFetch("/subscriptions/cancel", {
-          method: "PATCH"
+        const subscriptionId = subscriptionIdEl.value.trim();
+
+        if (!subscriptionId) {
+          throw new Error("subscription_id를 입력하세요. GET /subscriptions/me 조회 결과의 id 또는 subscription_id를 사용하세요.");
+        }
+
+         const data = await apiFetch("/subscriptions/cancel", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            subscription_id: subscriptionId
+          })
         });
+
         showResult("PATCH /subscriptions/cancel 성공", data);
       } catch (error) {
         showError("PATCH /subscriptions/cancel 실패", error);
