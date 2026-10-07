@@ -49,11 +49,12 @@ def run_batch(*, deps: PipelineDeps, collect, run_id=None, privacy_cleanup=None,
     """collect(deadline=monotonic 기준 종료 시각) → LiveCollectionResult 형태의 결과."""
     run_id = run_id or uuid.uuid4().hex
     started = monotonic()
+    batch_deadline = started + budget.total_seconds()
     started_at = deps.clock()
     errors: list[str] = []
     collected = None
     try:
-        collected = collect(deadline=started + collection_budget.total_seconds())
+        collected = collect(deadline=min(batch_deadline, started + collection_budget.total_seconds()))
         context = DailyContext(list(collected.articles), collected.collection_succeeded)
     except Exception:
         errors.append("COLLECTION_CRASHED")
@@ -64,12 +65,13 @@ def run_batch(*, deps: PipelineDeps, collect, run_id=None, privacy_cleanup=None,
     jobs = sorted(deps.jobs.open_jobs(), key=lambda job: (job.deadline_at, job.job_id))
     reports, unprocessed, budget_exceeded = [], 0, False
     for index, job in enumerate(jobs):
-        if monotonic() - started >= budget.total_seconds():
+        if monotonic() >= batch_deadline:
             budget_exceeded, unprocessed = True, len(jobs) - index
             errors.append("BATCH_BUDGET_EXCEEDED")
             break
         try:
-            reports.append(process_job(job.job_id, context=context, deps=deps, run_id=run_id))
+            reports.append(process_job(job.job_id, context=context, deps=deps, run_id=run_id,
+                                       batch_deadline=batch_deadline, monotonic=monotonic))
         except Exception:
             # 작업은 processing으로 남고 선점 만료 후 다음 실행이 다시 처리한다(SMTP 전 단계).
             errors.append("JOB_CRASHED")
@@ -85,9 +87,13 @@ def run_batch(*, deps: PipelineDeps, collect, run_id=None, privacy_cleanup=None,
             cleanup = "failed"
             errors.append("PRIVACY_CLEANUP_FAILED")
 
+    duration = monotonic() - started
+    if duration >= budget.total_seconds():
+        budget_exceeded = True
+        errors.append("BATCH_BUDGET_EXCEEDED")
     return {
         "run_id": run_id, "started_at": started_at.isoformat(), "finished_at": deps.clock().isoformat(),
-        "duration_seconds": round(monotonic() - started, 3), "budget_exceeded": budget_exceeded,
+        "duration_seconds": round(duration, 3), "budget_exceeded": budget_exceeded,
         "collection": collection_summary(collected),
         "jobs": {"total": len(jobs), "processed": len(reports), "unprocessed": unprocessed,
                  "by_status": dict(Counter(report["status"] for report in reports)),

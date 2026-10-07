@@ -172,6 +172,91 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.run_job()["status"], "skipped_late")
         self.assertEqual(self.sent, [])
 
+    def test_batch_budget_expiring_during_render_or_eligibility_prevents_smtp(self):
+        for stage in ("render", "eligibility"):
+            with self.subTest(stage=stage):
+                self.setUp()
+                timer = [0.0]
+                if stage == "render":
+                    def render(data, job):
+                        timer[0] = 60.0
+                        return (), []
+                    self.deps.render_images = render
+                else:
+                    calls = []
+                    def eligibility(subscription_id, now):
+                        calls.append(1)
+                        if len(calls) == 2:
+                            timer[0] = 60.0
+                        return Eligibility(True, "active")
+                    self.gateway.check_delivery_eligibility = eligibility
+                report = process_job(self.job.job_id, context=self.context, deps=self.deps,
+                                     run_id="budget", batch_deadline=60.0,
+                                     monotonic=lambda: timer[0])
+                self.assertEqual(report["error_code"], "BATCH_BUDGET_EXCEEDED")
+                self.assertEqual(self.jobs.get(self.job.job_id).smtp_attempts, 0)
+                self.assertEqual(self.sent, [])
+                if stage == "render":
+                    self.assertEqual(self.gateway.tokens, 0)
+
+    def test_archive_save_interruption_restores_kind_and_reuses_mail_for_all_types(self):
+        for kind in ("news_card", "no_news", "end_notice"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                job = self.job
+                context = self.context if kind == "news_card" else DailyContext([], True)
+                if kind == "end_notice":
+                    snapshot = {**SNAPSHOT, "status": "expired", "start_date": "2026-10-11",
+                                "end_date_exclusive": "2026-10-18"}
+                    job = self.jobs.create_if_absent(new_job(snapshot, "subscription_end"))
+                    self.gateway.reason = "expired"
+                    self.clock.now = job.scheduled_at + timedelta(minutes=7)
+                save = self.archive.save
+                def interrupted_save(job_id, message_bytes):
+                    save(job_id, message_bytes)
+                    raise RuntimeError("interrupted after durable save")
+                self.archive.save = interrupted_save
+                with self.assertRaises(RuntimeError):
+                    self.run_job(job=job, context=context)
+                self.assertIsNone(self.jobs.get(job.job_id).content_kind)
+                archived = self.archive.load(job.job_id)
+                tokens = self.gateway.tokens
+                self.archive.save = save
+                self.clock.now += timedelta(minutes=60)
+                report = self.run_job(job=job, context=context, run_id="recovery")
+                self.assertEqual((report["status"], report["content_kind"]), ("sent", kind))
+                self.assertEqual(self.jobs.get(job.job_id).content_kind, kind)
+                self.assertEqual(self.sent[0][0].as_bytes(), archived)
+                self.assertEqual(self.gateway.tokens, tokens)
+
+    def test_legacy_archived_mail_without_kind_header_is_restored(self):
+        save = self.archive.save
+        def legacy_save(job_id, message_bytes):
+            message = BytesParser(policy=policy.SMTP).parsebytes(message_bytes)
+            del message["X-Briefing-Content-Kind"]
+            save(job_id, message.as_bytes())
+            raise RuntimeError("legacy interrupted save")
+        self.archive.save = legacy_save
+        with self.assertRaises(RuntimeError):
+            self.run_job(context=DailyContext([], True))
+        self.clock.now += timedelta(minutes=60)
+        report = self.run_job(context=DailyContext([], True), run_id="recovery")
+        self.assertEqual(report["content_kind"], "no_news")
+        self.assertEqual(self.jobs.get(self.job.job_id).content_kind, "no_news")
+
+    def test_invalid_archived_kind_is_not_sent(self):
+        self.outcomes = [SmtpOutcome("failed", True, "SMTP_TEMPORARY_FAILURE")]
+        self.run_job(context=DailyContext([], True))
+        message = BytesParser(policy=policy.SMTP).parsebytes(self.archive.load(self.job.job_id))
+        message.replace_header("X-Briefing-Content-Kind", "end_notice")
+        self.deps.archive = InMemoryMailArchive()
+        self.deps.archive.save(self.job.job_id, message.as_bytes())
+        self.clock.now += timedelta(minutes=15)
+        report = self.run_job(run_id="recovery")
+        self.assertEqual(report["error_code"], "ARCHIVED_CONTENT_KIND_INVALID")
+        self.assertEqual(len(self.sent), 1)
+        self.assertFalse(self.jobs.get(self.job.job_id).retryable)
+
     def test_end_notice_only_for_natural_expiry(self):
         snapshot = {**SNAPSHOT, "status": "expired", "start_date": "2026-10-11", "end_date_exclusive": "2026-10-18"}
         for reason, expected in (("expired", "sent"), ("cancelled", "cancelled")):

@@ -122,11 +122,79 @@ class BatchTests(unittest.TestCase):
         other = {**SNAPSHOT, "subscription_id": "00000000-0000-4000-8000-000000000009",
                  "recipient_email": "second@example.com"}
         self.gateway.due = [SNAPSHOT, other]
+        timer = Monotonic()
+        send = self.deps.send
+        def slow_send(message, recipient):
+            result = send(message, recipient)
+            timer.value += 46 * 60
+            return result
+        self.deps.send = slow_send
         summary = run_batch(deps=self.deps, collect=self.collect, run_id="run-1",
-                            monotonic=Monotonic(step=30 * 60), budget=timedelta(minutes=45))
+                            monotonic=timer, budget=timedelta(minutes=45))
         self.assertTrue(summary["budget_exceeded"])
         self.assertEqual(summary["jobs"]["unprocessed"], 1)
         self.assertEqual(len(self.sent), 1)
+
+    def test_generation_over_budget_stops_before_render_and_can_resume(self):
+        timer = Monotonic()
+        build = self.deps.build_cards
+        rendered = []
+        def slow_build(job, article):
+            timer.value += 46 * 60
+            return build(job, article)
+        self.deps.build_cards = slow_build
+        self.deps.render_images = lambda *args: rendered.append(1) or ((), [])
+        summary = run_batch(deps=self.deps, collect=self.collect, monotonic=timer)
+        self.assertTrue(summary["budget_exceeded"])
+        self.assertIn("BATCH_BUDGET_EXCEEDED", summary["errors"])
+        self.assertEqual(summary["jobs"]["by_status"], {"failed": 1})
+        self.assertEqual((self.sent, rendered), ([], []))
+        job = self.jobs.get(summary["jobs"]["results"][0]["job_id"])
+        self.assertTrue(job.retryable)
+        self.assertEqual(job.smtp_attempts, 0)
+        self.deps.build_cards = build
+        self.deps.clock.now += timedelta(minutes=15)
+        resumed = run_batch(deps=self.deps, collect=self.collect, monotonic=Monotonic())
+        self.assertEqual(resumed["jobs"]["by_status"], {"sent": 1})
+
+    def test_last_smtp_result_is_recorded_even_if_budget_expires_during_send(self):
+        timer = Monotonic()
+        send = self.deps.send
+        def slow_send(message, recipient):
+            result = send(message, recipient)
+            timer.value += 46 * 60
+            return result
+        self.deps.send = slow_send
+        summary = run_batch(deps=self.deps, collect=self.collect, monotonic=timer)
+        self.assertTrue(summary["budget_exceeded"])
+        self.assertEqual(summary["jobs"]["by_status"], {"sent": 1})
+        self.assertEqual(summary["jobs"]["unprocessed"], 0)
+
+    def test_stale_sending_is_reported_as_unknown_without_resending(self):
+        job = self.jobs.create_if_absent(new_job(SNAPSHOT, "daily_briefing"))
+        token = self.jobs.claim(job.job_id, run_id="old", now=NOW).claim_token
+        self.jobs.transition(job.job_id, claim_token=token, to_status="sending", now=NOW,
+                             smtp_attempts=1)
+        self.deps.clock.now += timedelta(minutes=60)
+        self.gateway.due = []
+        summary = run_batch(deps=self.deps, collect=self.collect, monotonic=Monotonic())
+        self.assertEqual(summary["jobs"]["by_status"], {"unknown": 1})
+        self.assertEqual(summary["jobs"]["results"][0]["error_code"], "SENDING_INTERRUPTED")
+        self.assertEqual(self.sent, [])
+
+    def test_overdue_open_job_is_reported_as_skipped_late_with_reason(self):
+        job = self.jobs.create_if_absent(new_job(SNAPSHOT, "daily_briefing"))
+        self.deps.clock.now = job.deadline_at
+        self.gateway.due = []
+        summary = run_batch(deps=self.deps, collect=self.collect, monotonic=Monotonic())
+        self.assertEqual(summary["jobs"]["by_status"], {"skipped_late": 1})
+        self.assertEqual(summary["jobs"]["results"][0]["error_code"], "DEADLINE_PASSED")
+        self.assertEqual(self.sent, [])
+
+    def test_collection_deadline_does_not_exceed_shorter_batch_budget(self):
+        run_batch(deps=self.deps, collect=self.collect, monotonic=Monotonic(),
+                  budget=timedelta(minutes=5))
+        self.assertEqual(self.deadlines, [5 * 60.0])
 
     def test_job_crash_and_cleanup_failure_are_isolated(self):
         def crash(job, article):
