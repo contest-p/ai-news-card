@@ -1,3 +1,4 @@
+HEAD
 # Secret configuration (keep only placeholder examples in Git)
 .env
 .env.*
@@ -13,3 +14,10 @@ __pycache__/
 node_modules/
 dist/
 .vercel/
+
+.env
+venv/
+__pycache__/
+ai-news-card-firebase-adminsdk.json
+firebase-service-account.json
+ e70d8d4 (feat: backend initial commit)

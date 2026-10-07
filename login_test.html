@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firebase Login + FastAPI Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 30px auto;
+      padding: 20px;
+      line-height: 1.5;
+    }
+    h1, h2 {
+      margin-top: 24px;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    input, textarea, button {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 6px;
+      padding: 10px;
+      font-size: 14px;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      font-family: monospace;
+    }
+    .btn-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .btn-row-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      background: #2563eb;
+      color: white;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    .danger {
+      background: #dc2626;
+    }
+    .danger:hover {
+      background: #b91c1c;
+    }
+    .gray {
+      background: #4b5563;
+    }
+    .gray:hover {
+      background: #374151;
+    }
+    .success {
+      background: #16a34a;
+    }
+    .success:hover {
+      background: #15803d;
+    }
+    .small {
+      font-size: 13px;
+      color: #555;
+    }
+    pre {
+      background: #111827;
+      color: #e5e7eb;
+      padding: 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .status {
+      font-weight: bold;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Firebase 로그인 + FastAPI 테스트</h1>
+  <p class="small">
+    먼저 회원가입 또는 로그인 후, 아래 API 버튼들을 눌러 테스트하세요.
+  </p>
+
+  <div class="card">
+    <h2>1. 계정</h2>
+
+    <label for="email">이메일</label>
+    <input id="email" type="email" placeholder="example@test.com" />
+
+    <label for="password">비밀번호</label>
+    <input id="password" type="password" placeholder="비밀번호 입력" />
+
+    <div class="btn-row-3">
+      <button id="signupBtn" class="success">회원가입</button>
+      <button id="loginBtn">로그인</button>
+      <button id="logoutBtn" class="gray">로그아웃</button>
+    </div>
+
+    <div class="status" id="authStatus">현재 상태: 로그아웃</div>
+
+    <label for="idToken">Firebase ID Token</label>
+    <textarea id="idToken" readonly placeholder="로그인 성공 시 여기에 ID Token이 표시됩니다."></textarea>
+  </div>
+
+  <div class="card">
+    <h2>2. API 호출</h2>
+    <p class="small">
+      base URL: <code>http://127.0.0.1:8000</code>
+    </p>
+
+    <div class="btn-row-3">
+      <button id="meBtn">GET /me</button>
+      <button id="syncBtn">POST /users/sync</button>
+      <button id="mySubBtn">GET /subscriptions/me</button>
+    </div>
+
+    <label for="subscriptionBody">POST /subscriptions/save 요청 본문(JSON)</label>
+    <textarea id="subscriptionBody">
+{
+  "plan": "basic"
+}
+    </textarea>
+
+    <div class="btn-row">
+      <button id="saveSubBtn">POST /subscriptions/save</button>
+      <button id="cancelSubBtn" class="danger">PATCH /subscriptions/cancel</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. 결과</h2>
+    <pre id="result">여기에 결과가 표시됩니다.</pre>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyC5wmo_-jm2rtG0dpbCjTbU0fDCWDw7NDU",
+      authDomain: "ai-news-card.firebaseapp.com",
+      projectId: "ai-news-card",
+      storageBucket: "ai-news-card.firebasestorage.app",
+      messagingSenderId: "450562779610",
+      appId: "1:450562779610:web:d7ab26e0eb659893a9b8e3",
+      measurementId: "G-6ZC1ZV6Z0P"
+    };
+
+    const BASE_URL = "http://127.0.0.1:8000";
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    const emailEl = document.getElementById("email");
+    const passwordEl = document.getElementById("password");
+    const idTokenEl = document.getElementById("idToken");
+    const authStatusEl = document.getElementById("authStatus");
+    const resultEl = document.getElementById("result");
+    const subscriptionBodyEl = document.getElementById("subscriptionBody");
+
+    const signupBtn = document.getElementById("signupBtn");
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const meBtn = document.getElementById("meBtn");
+    const syncBtn = document.getElementById("syncBtn");
+    const mySubBtn = document.getElementById("mySubBtn");
+    const saveSubBtn = document.getElementById("saveSubBtn");
+    const cancelSubBtn = document.getElementById("cancelSubBtn");
+
+    function showResult(title, data) {
+      if (typeof data === "string") {
+        resultEl.textContent = `${title}\n\n${data}`;
+      } else {
+        resultEl.textContent = `${title}\n\n${JSON.stringify(data, null, 2)}`;
+      }
+    }
+
+    function showError(title, error) {
+      let msg = error?.message || error;
+      if (error?.responseData) {
+        msg += "\n\n" + JSON.stringify(error.responseData, null, 2);
+      }
+      resultEl.textContent = `${title}\n\n${msg}`;
+    }
+
+    async function getIdTokenOrThrow() {
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("먼저 로그인하세요.");
+      }
+      const token = await user.getIdToken(true);
+      idTokenEl.value = token;
+      return token;
+    }
+
+    async function apiFetch(path, options = {}) {
+      const token = await getIdTokenOrThrow();
+
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        ...(options.headers || {})
+      };
+
+      const response = await fetch(`${BASE_URL}${path}`, {
+        ...options,
+        headers
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      let data;
+
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        data = await response.text();
+      }
+
+      if (!response.ok) {
+        const err = new Error(`HTTP ${response.status} ${response.statusText}`);
+        err.responseData = data;
+        throw err;
+      }
+
+      return data;
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const token = await user.getIdToken();
+        idTokenEl.value = token;
+        authStatusEl.textContent = `현재 상태: 로그인됨 (${user.email})`;
+      } else {
+        idTokenEl.value = "";
+        authStatusEl.textContent = "현재 상태: 로그아웃";
+      }
+    });
+
+    signupBtn.addEventListener("click", async () => {
+      try {
+        const email = emailEl.value.trim();
+        const password = passwordEl.value.trim();
+
+        if (!email || !password) {
+          throw new Error("이메일과 비밀번호를 입력하세요.");
+        }
+
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const token = await userCredential.user.getIdToken();
+        idTokenEl.value = token;
+
+        showResult("회원가입 성공", {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email
+        });
+      } catch (error) {
+        showError("회원가입 실패", error);
+      }
+    });
+
+    loginBtn.addEventListener("click", async () => {
+      try {
+        const email = emailEl.value.trim();
+        const password = passwordEl.value.trim();
+
+        if (!email || !password) {
+          throw new Error("이메일과 비밀번호를 입력하세요.");
+        }
+
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const token = await userCredential.user.getIdToken();
+        idTokenEl.value = token;
+
+        showResult("로그인 성공", {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          idToken: token
+        });
+      } catch (error) {
+        showError("로그인 실패", error);
+      }
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await signOut(auth);
+        showResult("로그아웃 성공", "로그아웃되었습니다.");
+      } catch (error) {
+        showError("로그아웃 실패", error);
+      }
+    });
+
+    meBtn.addEventListener("click", async () => {
+      try {
+        const data = await apiFetch("/me", {
+          method: "GET"
+        });
+        showResult("GET /me 성공", data);
+      } catch (error) {
+        showError("GET /me 실패", error);
+      }
+    });
+
+    syncBtn.addEventListener("click", async () => {
+      try {
+        const data = await apiFetch("/users/sync", {
+          method: "POST"
+        });
+        showResult("POST /users/sync 성공", data);
+      } catch (error) {
+        showError("POST /users/sync 실패", error);
+      }
+    });
+
+    mySubBtn.addEventListener("click", async () => {
+      try {
+        const data = await apiFetch("/subscriptions/me", {
+          method: "GET"
+        });
+        showResult("GET /subscriptions/me 성공", data);
+      } catch (error) {
+        showError("GET /subscriptions/me 실패", error);
+      }
+    });
+
+    saveSubBtn.addEventListener("click", async () => {
+      try {
+        let body;
+        try {
+          body = JSON.parse(subscriptionBodyEl.value);
+        } catch (e) {
+          throw new Error("구독 저장 JSON 형식이 올바르지 않습니다.");
+        }
+
+        const data = await apiFetch("/subscriptions/save", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(body)
+        });
+
+        showResult("POST /subscriptions/save 성공", data);
+      } catch (error) {
+        showError("POST /subscriptions/save 실패", error);
+      }
+    });
+
+    cancelSubBtn.addEventListener("click", async () => {
+      try {
+        const data = await apiFetch("/subscriptions/cancel", {
+          method: "PATCH"
+        });
+        showResult("PATCH /subscriptions/cancel 성공", data);
+      } catch (error) {
+        showError("PATCH /subscriptions/cancel 실패", error);
+      }
+    });
+  </script>
+</body>
+</html>
