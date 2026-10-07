@@ -9,7 +9,8 @@ const moduleReady = import('data:text/javascript;base64,' + fs.readFileSync(path
 test('Firebase restores user, reads fresh ID tokens, observes logout and signs in with Google', async () => {
   const { createFirebaseAuth } = await moduleReady;
   let listener, tokens = 0, loads = 0;
-  const user = { uid: 'firebase-uid', getIdToken: async () => `id-${++tokens}` };
+  const refreshFlags = [];
+  const user = { uid: 'firebase-uid', getIdToken: async (force) => { refreshFlags.push(force); return `id-${++tokens}`; } };
   const auth = { currentUser: user, authStateReady: async () => {} };
   const changes = [];
   const sdk = {
@@ -23,6 +24,8 @@ test('Firebase restores user, reads fresh ID tokens, observes logout and signs i
   assert.equal(await client.restore(), user);
   assert.equal(await client.getToken(), 'id-1');
   assert.equal(await client.getToken(), 'id-2');
+  assert.equal(await client.getToken(true), 'id-3');
+  assert.deepEqual(refreshFlags, [false, false, true]);
   await client.signOut();
   await assert.rejects(client.getToken(), /로그인/);
   assert.equal(await client.signIn(), user);

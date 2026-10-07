@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional, Literal, Any
 from pathlib import Path
 
@@ -35,6 +35,7 @@ app.add_middleware(
         "http://localhost:5500",
         "http://127.0.0.1:5501",
         "http://localhost:5501",
+        *[origin.strip().rstrip("/") for origin in os.getenv("FRONTEND_ORIGINS", "").split(",") if origin.strip()],
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -142,6 +143,31 @@ def root():
     return {"message": "FastAPI + Firebase 서버 실행 중"}
 
 
+@app.get("/catalog")
+def catalog():
+    return {
+        "categories": ["economy", "it_science", "politics", "society", "world", "culture"],
+        "durations": [7, 14, 28],
+        "consent_version": os.getenv("CONSENT_VERSION", "v1"),
+        "capabilities": {"settings_change": False, "feedback": False},
+    }
+
+
+def effective_subscription_status(data, now):
+    if data.get("status") != "active":
+        return data.get("status")
+    if data.get("end_date_exclusive"):
+        try:
+            if now.astimezone(KST).date() >= date.fromisoformat(data["end_date_exclusive"]):
+                return "expired"
+        except (TypeError, ValueError):
+            pass
+    expiry = data.get("expires_at")
+    if isinstance(expiry, datetime) and expiry.tzinfo and now >= expiry:
+        return "expired"
+    return "active"
+
+
 @app.get("/me")
 def me(current_user: dict = Depends(get_current_user)):
     return {
@@ -229,9 +255,11 @@ def save_subscription(
         subscription_data["cancelled_at"] = now if payload.status == "cancelled" else None
 
     if payload.engine_settings is not None:
+        if payload.engine_settings.consent_version != os.getenv("CONSENT_VERSION", "v1"):
+            raise HTTPException(409, "개인정보 안내가 변경되었습니다. 새로고침 후 다시 동의해 주세요.")
         if payload.status != "active":
             raise HTTPException(422, "엔진 설정은 활성 구독에만 저장할 수 있습니다.")
-        if existing_doc.exists and old_data.get("status") == "active" and old_data.get("start_date"):
+        if existing_doc.exists and effective_subscription_status(old_data, now) == "active" and old_data.get("start_date"):
             raise HTTPException(409, "활성 구독 설정 변경 정책은 별도 API에서 처리해야 합니다.")
         from datetime import timedelta
         import uuid
@@ -263,6 +291,8 @@ def get_my_subscription(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="구독 정보가 없습니다.")
 
     sub_data = sub_doc.to_dict()
+
+    sub_data["status"] = effective_subscription_status(sub_data, datetime.now(timezone.utc))
 
     return {
         "message": "구독 조회 성공",

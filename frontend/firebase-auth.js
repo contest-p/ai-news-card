@@ -32,11 +32,11 @@ export function createFirebaseAuth(config, onUserChanged, loader = loadSdk) {
       return (await sdk.signInWithPopup(auth, provider)).user;
     },
     async signOut() { const { sdk, auth } = await initialize(); await sdk.signOut(auth); },
-    async getToken() {
+    async getToken(forceRefresh = false) {
       const { auth } = await initialize();
       if (!auth.currentUser) throw new Error("로그인 후 다시 시도해 주세요.");
       // Firebase refreshes an expiring ID token; never reuse a saved access token.
-      return auth.currentUser.getIdToken();
+      return auth.currentUser.getIdToken(forceRefresh);
     },
   };
 }
