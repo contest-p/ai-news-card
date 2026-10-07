@@ -21,7 +21,7 @@ async function main() {
     await page.setContent(fs.readFileSync(htmlPath, 'utf8'), { waitUntil: 'load' });
     await page.evaluate(async () => { await document.fonts.ready; });
     const layout = await page.evaluate(() => {
-      const card = document.querySelector('.card');
+      const card = document.querySelector('.news-template');
       const rect = card.getBoundingClientRect();
       const overflow = [...card.querySelectorAll('*')].filter(el => {
         const r = el.getBoundingClientRect();
@@ -30,10 +30,10 @@ async function main() {
       }).map(el => el.tagName + '.' + el.className);
       return { width: rect.width, height: Math.ceil(rect.height), overflow,
         fontLoaded: document.fonts.check('31px CardKorean'),
-        minimumTextPx: Math.min(...[...card.querySelectorAll('h1,p,.source,.bottom,.badge')].map(el => parseFloat(getComputedStyle(el).fontSize))) };
+        minimumTextPx: 2 * Math.min(...[...card.querySelectorAll('h1,p,a,.news-template-label,.news-template-ai')].map(el => parseFloat(getComputedStyle(el).fontSize))) };
     });
     if (layout.overflow.length || !layout.fontLoaded || requests.length) throw new Error('LAYOUT_FONT_OR_NETWORK_CHECK_FAILED');
-    await page.locator('.card').screenshot({ path: pngPath, type: 'png' });
+    await page.locator('.news-template').screenshot({ path: pngPath, type: 'png' });
     const bytes = fs.readFileSync(pngPath);
     process.stdout.write(JSON.stringify({ ...layout, bytes: bytes.length,
       sha256: crypto.createHash('sha256').update(bytes).digest('hex'), externalRequests: requests.length,

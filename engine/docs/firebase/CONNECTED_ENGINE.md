@@ -116,7 +116,8 @@ SMTP 수락 1건, 배치 오류 없음일 때 종료 코드 0이다. 대상 없�
 DB 서버 트랜잭션과 실제 메일 수신 완료로 보고하지 않는다.
 
 신규 저장소·HTTP 어댑터는 DB 대역과 가상 HTTP/SMTP로 검증한다. 실제 서버 트랜잭션 재시도·IAM·메일 수신은 별도다.
-현재 RAG는 no_evidence_search 기본값이며 과거 벡터 검색은 후속 작업이다. 카드는 현재 엔진 템플릿으로 렌더한다.
+현재 RAG는 no_evidence_search 기본값이며 과거 벡터 검색은 후속 작업이다. 카드는 공유 프론트 템플릿으로 렌더한다.
+2026-10-07 별도 템플릿 테스트 메일을 실제 전송했고 사용자가 수신함 도착·정상 표시를 확인했다. DB/API 구독 통합 발송 검증과는 별개다.
 운영 예약·사용자 전체 발송·개인정보 자동 정리는 아직 활성화하지 않았다.
 
 공식 인증 근거: [로컬 ADC](https://docs.cloud.google.com/docs/authentication/set-up-adc-local-dev-environment),

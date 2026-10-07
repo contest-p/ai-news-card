@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 from engine.card_render import ROOT, card_data_hash
 from engine.generation import LocalGenerationStore
-from engine.mail_assembly import NewsMailData, assemble_mail, email_address
+from engine.mail_assembly import MAIL_TEMPLATE_VERSION, NewsMailData, assemble_mail, email_address
 from engine.card_images import approved_images
 from engine.selection import parse_timestamp
 from engine.smtp_sender import connect  # 운영 발송과 같은 TLS·로그인 절차
@@ -94,7 +94,13 @@ def prepare_message(settings, output_root):
     data = result["result"]["card_data"]
     images, issues = approved_images(data, root / "render")
     job = "smtp-test-" + card_data_hash(data)
-    identity = job + "\n" + settings.sender + "\n" + settings.recipient
+    # New template/image revisions need a new test identity; rerunning the same
+    # revision still reuses the exact MIME and never submits a duplicate.
+    render = json.loads((root / "render" / "render_result.json").read_text("utf-8"))
+    revision = {"mail": MAIL_TEMPLATE_VERSION, "template": render["template_sha256"],
+                "style": render.get("style_sha256"),
+                "images": [hashlib.sha256(image.png).hexdigest() for image in images]}
+    identity = job + "\n" + settings.sender + "\n" + settings.recipient + "\n" + json.dumps(revision, sort_keys=True)
     key = hashlib.sha256(identity.encode()).hexdigest()
     path = output_root / (key + ".eml")
     if path.exists():
@@ -105,6 +111,7 @@ def prepare_message(settings, output_root):
                                   scheduled_date_kst=parse_timestamp(result["input_collected_at"]).astimezone(KST).date(),
                                   card_data=data, selection_reason=result["selection_reason"], inline_images=images,
                                   preview=True))
+        message.replace_header("Subject", "[템플릿 테스트] " + str(message["Subject"]))
         path.write_bytes(message.as_bytes())
     return message, key, issues
 

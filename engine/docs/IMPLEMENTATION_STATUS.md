@@ -1,5 +1,7 @@
 # 엔진 구현 현황과 다음 작업
 
+2026-10-07 추가: Firestore 발송·생성·MIME 저장소와 Backend HTTP 어댑터를 구현했다. 공유 프론트 카드 템플릿 연결, 이미지·PC/모바일 메일 검수, 실제 테스트 메일 수신·정상 표시 확인도 완료했다. 전체 테스트 234개 통과. 아래 10월 6일 표는 당시 기록이며, 최신 DB/API 실제 연결 상태는 [연결 안내](firebase/CONNECTED_ENGINE.md), 템플릿·수신 결과는 [렌더 검수](CARD_RENDER.md)를 참고한다.
+
 확인일: 2026-10-06 (KST). 기준은 공통 PRD 본문 v0.4와 박경연 엔진 PRD 본문 v0.3입니다. DB는 Cloud Firestore(Firebase)로 확정이며 실제 연결은 2026-10-07에 진행합니다. 오늘은 DB가 없어도 되는 부분을 구현했고, 저장소는 Firestore와 같은 의미의 계약(Protocol)과 메모리 구현으로 검증했습니다. Backend·Frontend·공통 PRD는 변경하지 않았습니다.
 
 ## 요구사항 대조

@@ -1,24 +1,22 @@
-"""검사 완료 카드 JSON → 임시 HTML 템플릿 → PNG. API·DB·메일 호출 없음."""
+"""검사 완료 카드 JSON → 공유 프론트 HTML 템플릿 → PNG. API·DB·메일 호출 없음."""
 
 import argparse
 import base64
-from html import escape
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
-from string import Template
 import subprocess
 import sys
-from urllib.parse import urlsplit
 
 from engine.cards import TERM_NAME_MAX_CHARS, fields, string
 from engine.selection import KST, canonical_url, parse_timestamp
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = Path(__file__).parent / "templates" / "card_preview.html"
-TEMPLATE_VERSION = "engine-preview-v1"
+TEMPLATE = ROOT / "frontend" / "card-template.js"
+TEMPLATE_STYLE = ROOT / "frontend" / "styles.css"
+TEMPLATE_VERSION = "frontend-shared-v1"
 # CARD_FONT_PATH가 없을 때 찾는 한글 TTF/OTF. GitHub Actions(Ubuntu)는 fonts-nanum 등 설치 필요.
 FONT_CANDIDATES = (
     Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "NotoSansKR-VF.ttf",
@@ -112,38 +110,20 @@ def kst_time(value):
 
 
 def build_html(data, index, *, font_bytes):
-    sources = validate_render_data(data)
-    card = data["card1" if index == 1 else "card2"]
-    if card is None:
+    validate_render_data(data)
+    if index not in (1, 2) or data["card1" if index == 1 else "card2"] is None:
         raise ValueError("CARD_OMITTED")
-    paragraphs = []
-    used = {data["article_id"]}
-    for sentence in card["sentences"]:
-        identity = sentence["source_article_id"]
-        used.add(identity)
-        label = ""
-        if sentence["temporal_role"] == "past":
-            label = (f"기준일 · {sentence['as_of']}" if sentence["as_of"] else
-                     f"근거 보도일 · {kst_time(sources[identity]['published_at'])}")
-        paragraphs.append('<p class="sentence">' +
-                          (f'<span class="fact-date">{escape(label)}</span>' if label else "") +
-                          escape(sentence["text"]) + "</p>")
-    term_html = []
-    for term in card["terms"]:
-        used.add(term["source_article_id"])
-        term_html.append(f'<p class="term"><strong>{escape(term["term"])}</strong> · {escape(term["definition"])}</p>')
-    source_html = []
-    for identity in sorted(used):
-        source = sources[identity]
-        url = canonical_url(source["url"])
-        source_html.append(f'{escape(source["publisher"])} · {escape(kst_time(source["published_at"]))}<br>'
-                           f'<a href="{escape(url, quote=True)}">원문 보기 · {escape(urlsplit(url).hostname)}</a>')
-    return Template(TEMPLATE.read_text("utf-8")).substitute(
-        page_title=escape(data["title"]), headline=escape(data["title"]),
-        published=escape(kst_time(data["published_at"])), font_data=base64.b64encode(font_bytes).decode(),
-        card_label="01 / 핵심 뉴스" if index == 1 else "02 / 배경 이해",
-        sentences="\n".join(paragraphs), terms='<aside class="terms">' + "".join(term_html) + "</aside>" if term_html else "",
-        sources="<br>".join(source_html), page_number=f"{index:02d}")
+    # The shared frontend formats dates; normalize timestamp calendar dates to KST.
+    displayed = json.loads(json.dumps(data))
+    displayed["published_at"] = parse_timestamp(data["published_at"]).astimezone(KST).isoformat()
+    for source in displayed["sources"]:
+        source["published_at"] = parse_timestamp(source["published_at"]).astimezone(KST).isoformat()
+    payload = {"data": displayed, "index": index,
+               "font_base64": base64.b64encode(font_bytes).decode()}
+    process = subprocess.run([shutil.which("node") or "node", str(Path(__file__).parent / "tools" / "build_card_html.cjs")],
+                             input=json.dumps(payload, ensure_ascii=False), capture_output=True,
+                             encoding="utf-8", timeout=15, check=True)
+    return process.stdout
 
 
 def render_card(result, output_dir, *, font_path, node="node"):
@@ -172,9 +152,10 @@ def render_card_data(data, output_dir, *, font_path, node=None):
                                  encoding="utf-8", timeout=60, check=True)
         layouts.append(json.loads(process.stdout))
         images.append(str(png_path))
-    output = {"template_version": TEMPLATE_VERSION, "template_status": "temporary_engine_preview",
+    output = {"template_version": TEMPLATE_VERSION, "template_status": "shared_frontend_template",
               "card_data_sha256": card_data_hash(data),
               "template_sha256": hashlib.sha256(TEMPLATE.read_bytes()).hexdigest(),
+              "style_sha256": hashlib.sha256(TEMPLATE_STYLE.read_bytes()).hexdigest(),
               "font": Path(font_path).name, "font_sha256": hashlib.sha256(font_bytes).hexdigest(),
               "image_files": images, "layout_result": layouts,
               "human_review_required": True, "mail_sent": False}
@@ -184,7 +165,7 @@ def render_card_data(data, output_dir, *, font_path, node=None):
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="검사 완료 카드 → 임시 템플릿 → PNG")
+    parser = argparse.ArgumentParser(description="검사 완료 카드 → 프론트 공유 템플릿 → PNG")
     parser.add_argument("--input", type=Path, default=ROOT / ".engine-local/live-card/result.json")
     parser.add_argument("--output", type=Path, default=ROOT / ".engine-local/live-card/render")
     parser.add_argument("--font", type=Path, default=None, help="기본값: CARD_FONT_PATH 또는 OS별 한글 폰트")
