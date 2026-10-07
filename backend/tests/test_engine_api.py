@@ -43,6 +43,7 @@ class Query:
 
 class Tx:
     def __init__(self, db): self.db, self.writes = db, []
+    def set(self, ref, data): self.writes.append((ref.path, deepcopy(data)))
     def create(self, ref, data):
         if ref.path in self.db.data: raise ValueError("EXISTS")
         self.writes.append((ref.path, deepcopy(data)))
@@ -146,10 +147,22 @@ class EngineApiTests(unittest.TestCase):
             self.assertEqual(error.exception.status_code,status)
 
     def test_resubscription_old_identity_becomes_unavailable(self):
+        first = self.service.list_snapshots(self.now)["subscriptions"][0]
+        self.assertEqual(first["subscription_id"], "fixture-user")
         self.db.data["subscriptions/fixture-user"]["subscription_id"]="new-subscription"
         self.assertEqual(self.service.eligibility("fixture-user",self.now)["reason"],"not_found")
         self.assertTrue(self.service.eligibility("new-subscription",self.now)["eligible"])
         self.assertEqual(self.service.list_snapshots(self.now)["subscriptions"][0]["subscription_id"],"new-subscription")
+
+    def test_due_query_only_freezes_the_requested_test_subscription(self):
+        self.db.data["subscriptions/fixture-user"]["subscription_id"] = "chosen-test"
+        self.db.data["subscriptions/another-user"] = {**self.data, "uid": "another-user",
+                                                  "subscription_id": "another-test"}
+        self.db.data["users/another-user"] = {"uid": "another-user"}
+        response = self.client.get("/api/v1/engine/subscriptions/due", params={
+            "now": self.now.isoformat(), "subscription_id": "chosen-test"}, headers=self.headers)
+        self.assertEqual([r["subscription_id"] for r in response.json()["subscriptions"]], ["chosen-test"])
+        self.assertFalse(any(path.startswith("subscriptions/another-user/engine_snapshots/") for path in self.db.data))
 
     def test_deleted_user_cannot_get_new_feedback_token(self):
         job_id="e"*64

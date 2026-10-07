@@ -147,7 +147,8 @@ class EngineService:
                      "scheduled_date_kst": day.isoformat(), "scheduled_at": scheduled.isoformat(),
                      "deadline_at": deadline.isoformat()}
         # Freeze the day's settings once they are requested; no SMTP/AI inside callback.
-        snapshot_ref = ref.collection("engine_snapshots").document(day.isoformat()+"-"+kind)
+        identity = hashlib.sha256(subscription_id.encode()).hexdigest()[:24]
+        snapshot_ref = ref.collection("engine_snapshots").document(identity+"-"+day.isoformat()+"-"+kind)
         @firestore.transactional
         def freeze(tx):
             current = ref.get(transaction=tx)
@@ -163,9 +164,12 @@ class EngineService:
             return candidate
         return freeze(self.db.transaction())
 
-    def list_snapshots(self, now, *, expired=False):
+    def list_snapshots(self, now, *, expired=False, subscription_id=None):
         now = utc(now)
-        query = self.subscriptions.where(filter=FieldFilter("status", "in", ["active", "expired"]))
+        query = self.subscriptions.where(filter=FieldFilter(
+            "subscription_id" if subscription_id else "status",
+            "==" if subscription_id else "in",
+            subscription_id if subscription_id else ["active", "expired"]))
         docs = list(query.limit(1001).stream(timeout=20))
         if len(docs) > 1000:
             raise HTTPException(503, "SUBSCRIPTION_QUERY_LIMIT_EXCEEDED")
@@ -252,8 +256,8 @@ def create_router(get_db):
     def service():
         return EngineService(get_db(), subscriptions=os.environ.get("ENGINE_SUBSCRIPTIONS_COLLECTION", "subscriptions"))
     @router.get("/subscriptions/due")
-    def due(now: datetime | None = None):
-        return service().list_snapshots(now or datetime.now(timezone.utc))
+    def due(now: datetime | None = None, subscription_id: str | None = None):
+        return service().list_snapshots(now or datetime.now(timezone.utc), subscription_id=subscription_id)
     @router.get("/subscriptions/expired")
     def expired(now: datetime | None = None):
         return service().list_snapshots(now or datetime.now(timezone.utc), expired=True)

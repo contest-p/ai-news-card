@@ -36,9 +36,9 @@ class TestGateway:
         self.gateway, self.subscription_id, self.recipient = gateway, subscription_id, recipient
 
     def list_due_subscriptions(self, now):
-        rows = [row for row in self.gateway.list_due_subscriptions(now)
-                if row["subscription_id"] == self.subscription_id]
-        if len(rows) > 1 or any(row["recipient_email"] != self.recipient for row in rows):
+        rows = self.gateway.list_due_subscriptions(now, subscription_id=self.subscription_id)
+        if len(rows) > 1 or any(row["subscription_id"] != self.subscription_id or
+                                row["recipient_email"] != self.recipient for row in rows):
             raise ValueError("TEST_SUBSCRIPTION_MISMATCH")
         return rows
 
@@ -95,6 +95,8 @@ def preflight(project, credentials=None):
 def run_test(client, *, text_only=False):
     smtp, chat = load_smtp_settings(), load_chat_settings()
     gateway = TestGateway(load_gateway(), os.environ["ENGINE_TEST_SUBSCRIPTION_ID"], smtp.recipient)
+    if not gateway.list_due_subscriptions(datetime.now(timezone.utc)):
+        raise ValueError("TEST_SUBSCRIPTION_NOT_DUE")
     repository = FirestoreArticleRepository(client)
     jobs = FirestoreJobStore(client, collection_name="engine_test_delivery_jobs")
     archive = FirestoreMailArchive(client,
@@ -121,11 +123,28 @@ def run_test(client, *, text_only=False):
     deps = PipelineDeps(gateway=gateway, jobs=jobs, archive=archive, build_cards=builder,
                         render_images=render, send=test_sender(smtp), sender_email=smtp.sender,
                         web_links=WebMailLinks(os.environ["ENGINE_WEB_BASE_URL"]))
+    # Keep retries belonging to another previously configured test out of this run.
+    scoped_jobs = TestJobStore(jobs, gateway.subscription_id, smtp.recipient)
+    deps.jobs = scoped_jobs
     summary = run_batch(deps=deps, collect=collect)
     summary["test_only"] = True
     summary["delivery_confirmed"] = False
     write_summary(summary, ROOT / ".engine-local" / "connected-test" / "runs")
     return summary
+
+
+class TestJobStore:
+    """Delegate persistence while only opening jobs for this test identity/address."""
+    def __init__(self, store, subscription_id, recipient):
+        self.store, self.subscription_id, self.recipient = store, subscription_id, recipient
+
+    def __getattr__(self, name):
+        return getattr(self.store, name)
+
+    def open_jobs(self):
+        return [job for job in self.store.open_jobs()
+                if job.subscription_id == self.subscription_id and
+                   job.settings_snapshot.get("recipient_email") == self.recipient]
 
 
 def main():
@@ -159,6 +178,7 @@ def main():
         return 0
     except Exception as error:
         print(json.dumps({"status": "failed", "error_type": type(error).__name__,
+                          "error_code": "TEST_SUBSCRIPTION_NOT_DUE" if str(error) == "TEST_SUBSCRIPTION_NOT_DUE" else "CONNECTED_TEST_FAILED",
                           "action": "Check local configuration and latest test job states; do not reset them."}))
         return 1
     finally:

@@ -78,8 +78,11 @@ class HttpEngineGateway:
         except (HTTPError, URLError, OSError, ValueError):
             raise GatewayUnavailable("BACKEND_REQUEST_FAILED") from None
 
-    def list_due_subscriptions(self, now):
-        rows = self.request("/subscriptions/due", query={"now": now.isoformat()})["subscriptions"]
+    def list_due_subscriptions(self, now, *, subscription_id=None):
+        query = {"now": now.isoformat()}
+        if subscription_id:
+            query["subscription_id"] = subscription_id
+        rows = self.request("/subscriptions/due", query=query)["subscriptions"]
         return self.validate_list(rows, "daily_briefing")
 
     def list_expired_subscriptions(self, now):

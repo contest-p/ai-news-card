@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from urllib.error import URLError
 
 from engine.http_gateway import GatewayUnavailable, HttpEngineGateway, NoRedirect
-from engine.tools.connected_batch import TestGateway, test_sender
+from engine.tools.connected_batch import TestGateway, TestJobStore, test_sender
 from engine.selection import parse_timestamp
 
 FIXTURE = json.loads((Path(__file__).parents[1] / "samples" / "selection.json").read_text("utf-8"))
@@ -72,6 +72,27 @@ class GatewayTests(unittest.TestCase):
         gateway = TestGateway(backend, self.snapshot["subscription_id"], "different@example.com")
         with self.assertRaises(ValueError):
             gateway.list_due_subscriptions(self.now)
+        backend.list_due_subscriptions.assert_called_once_with(self.now, subscription_id=self.snapshot["subscription_id"])
+
+    def test_test_gateway_rejects_a_different_subscription_even_with_same_email(self):
+        backend = Mock()
+        backend.list_due_subscriptions.return_value = [{**self.snapshot, "subscription_id": "other"}]
+        gateway = TestGateway(backend, self.snapshot["subscription_id"], self.snapshot["recipient_email"])
+        with self.assertRaises(ValueError):
+            gateway.list_due_subscriptions(self.now)
+
+    def test_scoped_http_query_and_pending_jobs_are_limited_to_one_test(self):
+        from types import SimpleNamespace
+        self.response({"subscriptions": [self.snapshot]})
+        self.gateway.list_due_subscriptions(self.now, subscription_id="chosen-test")
+        self.assertIn("subscription_id=chosen-test", self.opener.open.call_args.args[0].full_url)
+        chosen = SimpleNamespace(subscription_id="chosen-test", settings_snapshot={"recipient_email": "chosen@example.com"})
+        other = SimpleNamespace(subscription_id="other", settings_snapshot={"recipient_email": "chosen@example.com"})
+        wrong_recipient = SimpleNamespace(subscription_id="chosen-test", settings_snapshot={"recipient_email": "other@example.com"})
+        store = Mock()
+        store.open_jobs.return_value = [chosen, other, wrong_recipient]
+        scoped = TestJobStore(store, "chosen-test", "chosen@example.com")
+        self.assertEqual(scoped.open_jobs(), [chosen])
 
     def test_test_sender_enforces_envelope_and_keyword_argument(self):
         settings = Mock(recipient="test@example.com")

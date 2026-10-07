@@ -1,19 +1,27 @@
 
 import os
 import json
+import hashlib
+from uuid import uuid4
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional, Any, List
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ValidationError
 
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 from zoneinfo import ZoneInfo
 from pathlib import Path
+from google.cloud.firestore_v1.base_query import FieldFilter
+
+try:
+    from .engine_api import SubscriptionSettings, create_router, instant
+except ImportError:
+    from engine_api import SubscriptionSettings, create_router, instant
 
 # --------------------------------------------------
 # 환경변수 로드
@@ -202,22 +210,26 @@ def get_engine_auth(
 # 중요: 모델은 라우터 함수보다 위에 있어야 함
 # --------------------------------------------------
 class SubscriptionSaveRequest(BaseModel):
-    category: str
-    keywords: List[str]
-    send_time: str
-    duration_weeks: int
-    agreed_privacy: bool
+    plan: str = "basic"
+    engine_settings: Optional[SubscriptionSettings] = None
+    category: Optional[str] = None
+    keywords: List[str] = Field(default_factory=list)
+    send_time: Optional[str] = None
+    duration_weeks: Optional[int] = None
+    agreed_privacy: Optional[bool] = None
 
     @field_validator("duration_weeks")
     @classmethod
     def validate_duration(cls, v):
-        if v not in [1, 2, 4]:
+        if v is not None and v not in [1, 2, 4]:
             raise ValueError("duration_weeks must be 1, 2, or 4")
         return v
 
     @field_validator("send_time")
     @classmethod
     def validate_send_time(cls, v):
+        if v is None:
+            return v
         try:
             datetime.strptime(v, "%H:%M")
         except ValueError:
@@ -228,8 +240,6 @@ class SubscriptionSaveRequest(BaseModel):
     @classmethod
     def validate_keywords(cls, v):
         cleaned = [k.strip() for k in v if k.strip()]
-        if not cleaned:
-            raise ValueError("keywords must not be empty")
         return cleaned
 
 
@@ -324,6 +334,9 @@ def health():
     return {"status": "ok"}
 
 
+app.include_router(create_router(lambda: db))
+
+
 @app.get("/catalog")
 def catalog():
     return {
@@ -382,53 +395,111 @@ def sync_user(current_user: dict = Depends(get_current_user)):
 def save_subscription(
     request: SubscriptionSaveRequest,
     current_user: dict = Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, max_length=200),
 ):
     uid = current_user["uid"]
     email = current_user.get("email")
+    settings = request.engine_settings
+    if settings is None and any((request.category, request.send_time, request.duration_weeks)):
+        if not request.agreed_privacy:
+            raise HTTPException(400, "개인정보 동의가 필요합니다.")
+        if not all((request.category, request.send_time, request.duration_weeks)):
+            raise HTTPException(422, "구독 설정을 모두 입력해주세요.")
+        hour, minute = map(int, request.send_time.split(":"))
+        if minute:
+            raise HTTPException(422, "발송 시간은 정시만 선택할 수 있습니다.")
+        try:
+            settings = SubscriptionSettings(categories=[request.category], keywords=request.keywords,
+                delivery_hour_kst=hour, duration_days=request.duration_weeks * 7,
+                consent_version=os.getenv("CONSENT_VERSION", "v1"))
+        except ValidationError:
+            raise HTTPException(422, "구독 설정이 올바르지 않습니다.") from None
+    if settings and settings.consent_version != os.getenv("CONSENT_VERSION", "v1"):
+        raise HTTPException(409, "개인정보 안내가 변경되었습니다. 다시 동의해주세요.")
+    if not email:
+        raise HTTPException(400, "인증 계정의 이메일이 필요합니다.")
+    fingerprint = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
+    now = datetime.now(timezone.utc)
+    ref = db.collection("subscriptions").document(uid)
 
-    # 개인정보 동의 필수
-    if not request.agreed_privacy:
-        raise HTTPException(status_code=400, detail="개인정보 동의가 필요합니다.")
+    @firestore.transactional
+    def save(transaction):
+        doc = ref.get(transaction=transaction)
+        previous = doc.to_dict() if doc.exists else {}
+        if idempotency_key and previous.get("request_key") == idempotency_key:
+            if previous.get("request_fingerprint") != fingerprint:
+                raise HTTPException(409, "동일한 요청 키에 다른 구독 설정이 사용되었습니다.")
+            if subscription_status(previous) != "active":
+                raise HTTPException(409, "종료된 신청입니다. 새 요청으로 재구독해주세요.")
+            return previous
+        # Read legacy random-ID documents too, before any transaction writes.
+        legacy = list(db.collection("subscriptions").where(
+            filter=FieldFilter("uid", "==", uid)).stream(transaction=transaction))
+        if any(subscription_status(row.to_dict()) == "active" and
+               (row.to_dict().get("end_date_exclusive") or row.to_dict().get("end_date"))
+               for row in legacy) or (subscription_status(previous) == "active" and
+                                     previous.get("end_date_exclusive")):
+            raise HTTPException(409, "이미 활성 구독이 있습니다. 먼저 해제해주세요.")
+        data = {"uid": uid, "email": email, "plan": request.plan, "status": "active",
+                "subscription_id": str(uuid4()), "created_at": now, "updated_at": now,
+                "cancelled_at": None, "canceled_at": None,
+                "request_key": idempotency_key, "request_fingerprint": fingerprint}
+        if settings:
+            start = datetime.now(KST).date() + timedelta(days=1)
+            end = start + timedelta(days=settings.duration_days)
+            data.update(settings.model_dump())
+            data.update(start_date=start.isoformat(), first_delivery_date=start.isoformat(),
+                        end_date_exclusive=end.isoformat(), expires_at=instant(end, 0),
+                        end_date=(end - timedelta(days=1)).isoformat(),
+                        category=settings.categories[0],
+                        send_time=f"{settings.delivery_hour_kst:02d}:00",
+                        duration_weeks=settings.duration_days // 7, agreed_privacy=True)
+        transaction.set(ref, data)
+        return data
 
-    # 이미 활성 구독이 있는지 확인
-    existing_docs = db.collection("subscriptions").where("uid", "==", uid).stream()
-
-    for doc in existing_docs:
-        data = doc.to_dict()
-
-        if data.get("status") == "active":
-            raise HTTPException(
-                status_code=400,
-                detail="이미 활성 구독이 있습니다. 먼저 해제해주세요.",
-            )
-
-    dates = calculate_subscription_dates(request.duration_weeks)
-    now_kst = datetime.now(KST).isoformat()
-
-    subscription_data = {
-        "uid": uid,
-        "email": email,
-        "category": request.category,
-        "keywords": request.keywords,
-        "send_time": request.send_time,
-        "duration_weeks": request.duration_weeks,
-        "agreed_privacy": request.agreed_privacy,
-        "status": "active",
-        "start_date": dates["start_date"],
-        "end_date": dates["end_date"],
-        "created_at": now_kst,
-        "updated_at": now_kst,
-        "canceled_at": None,
-    }
-
-    doc_ref = db.collection("subscriptions").document()
-    doc_ref.set(subscription_data)
-
+    subscription_data = save(db.transaction())
     return {
         "message": "구독이 저장되었습니다.",
-        "subscription_id": doc_ref.id,
-        "subscription": subscription_data,
+        "subscription_id": subscription_data["subscription_id"],
+        "subscription": subscription_response(subscription_data),
     }
+
+
+def subscription_status(data):
+    status = data.get("status")
+    if status in ("cancelled", "canceled"):
+        return "cancelled"
+    end = data.get("end_date_exclusive")
+    if not end and data.get("end_date"):
+        end = (date.fromisoformat(data["end_date"]) + timedelta(days=1)).isoformat()
+    if status == "active" and end and datetime.now(KST).date().isoformat() >= end:
+        return "expired"
+    return status
+
+
+def subscription_response(data):
+    result = {key: value for key, value in data.items()
+              if key not in ("request_key", "request_fingerprint")}
+    result["status"] = subscription_status(data)
+    if not result.get("end_date_exclusive") and result.get("end_date"):
+        result["end_date_exclusive"] = (date.fromisoformat(result["end_date"]) + timedelta(days=1)).isoformat()
+    if not result.get("categories") and result.get("category"):
+        result["categories"] = [result["category"]]
+    if "delivery_hour_kst" not in result and result.get("send_time"):
+        result["delivery_hour_kst"] = int(result["send_time"].split(":")[0])
+    return serialize_dict(result)
+
+
+def find_subscription(uid, transaction=None):
+    doc = db.collection("subscriptions").document(uid).get(transaction=transaction)
+    if doc.exists:
+        return doc
+    docs = list(db.collection("subscriptions").where(
+        filter=FieldFilter("uid", "==", uid)).stream(transaction=transaction))
+    if not docs:
+        raise HTTPException(404, "구독이 없습니다.")
+    return max(docs, key=lambda row: (subscription_status(row.to_dict()) == "active",
+                                     str(row.to_dict().get("created_at", ""))))
 
 
 # --------------------------------------------------
@@ -436,29 +507,12 @@ def save_subscription(
 # --------------------------------------------------
 @app.get("/subscriptions/me")
 def get_my_subscription(current_user: dict = Depends(get_current_user)):
-    uid = current_user["uid"]
-
-    docs = db.collection("subscriptions").where("uid", "==", uid).stream()
-
-    active_subscription = None
-
-    for doc in docs:
-        data = doc.to_dict()
-
-        if data.get("status") == "active":
-            data["id"] = doc.id
-            active_subscription = data
-            break
-
-    if not active_subscription:
-        return {
-            "has_active_subscription": False,
-            "subscription": None,
-        }
-
+    doc = find_subscription(current_user["uid"])
+    data = doc.to_dict()
+    data.setdefault("subscription_id", doc.id)
     return {
-        "has_active_subscription": True,
-        "subscription": serialize_dict(active_subscription),
+        "has_active_subscription": subscription_status(data) == "active",
+        "subscription": subscription_response(data),
     }
 
 
@@ -467,40 +521,21 @@ def get_my_subscription(current_user: dict = Depends(get_current_user)):
 # --------------------------------------------------
 @app.patch("/subscriptions/cancel")
 def cancel_subscription(current_user: dict = Depends(get_current_user)):
-    uid = current_user["uid"]
-
-    docs = db.collection("subscriptions").where("uid", "==", uid).stream()
-
-    active_doc = None
-    active_data = None
-
-    for doc in docs:
+    @firestore.transactional
+    def cancel(transaction):
+        doc = find_subscription(current_user["uid"], transaction)
         data = doc.to_dict()
-
-        if data.get("status") == "active":
-            active_doc = doc
-            active_data = data
-            break
-
-    if not active_doc:
-        raise HTTPException(status_code=404, detail="활성 구독이 없습니다.")
-
-    now_kst = datetime.now(KST).isoformat()
-
-    update_data = {
-        "status": "canceled",
-        "canceled_at": now_kst,
-        "updated_at": now_kst,
-    }
-
-    active_doc.reference.update(update_data)
-
+        data.setdefault("subscription_id", doc.id)
+        if subscription_status(data) == "active":
+            now = datetime.now(timezone.utc)
+            data.update(status="cancelled", cancelled_at=now, canceled_at=now, updated_at=now)
+            transaction.set(doc.reference, data)
+        return data
+    data = cancel(db.transaction())
     return {
         "message": "구독이 해제되었습니다.",
-        "subscription_id": active_doc.id,
-        "previous_status": active_data.get("status"),
-        "new_status": "canceled",
-        "canceled_at": now_kst,
+        "subscription_id": data["subscription_id"],
+        "subscription": subscription_response(data),
     }
 
 

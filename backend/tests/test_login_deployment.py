@@ -13,10 +13,11 @@ class LoginDeploymentTests(unittest.TestCase):
         with patch.dict("os.environ", {"FRONTEND_ORIGINS": "https://ai-news-card-frontend.vercel.app"}), \
              patch("firebase_admin._apps", {"test": object()}), \
              patch("firebase_admin.firestore.client", return_value=DB()):
-            cls.main = importlib.import_module("backend.main")
+            cls.main = importlib.reload(importlib.import_module("backend.main"))
 
     def setUp(self):
         self.main.db = DB()
+        self.main.app.dependency_overrides.clear()
         self.client = TestClient(self.main.app)
 
     def test_login_sync_verifies_firebase_token_and_saves_its_owner(self):
