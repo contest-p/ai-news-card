@@ -1,0 +1,13 @@
+[project]
+name = "ai-news-card-backend"
+version = "1.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "firebase-admin>=6,<8",
+  "python-dotenv>=1,<2",
+  "tzdata>=2025.1",
+]
+
+[tool.vercel]
+entrypoint = "main:app"

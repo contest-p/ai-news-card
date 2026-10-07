@@ -1,4 +1,6 @@
 {
+  "buildCommand": "node tools/build.cjs",
+  "outputDirectory": "dist",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "headers": [
     {

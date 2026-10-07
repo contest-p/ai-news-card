@@ -1,5 +1,6 @@
 
 import os
+import json
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional, Any, List
 
@@ -17,7 +18,7 @@ from pathlib import Path
 # --------------------------------------------------
 # 환경변수 로드
 # --------------------------------------------------
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 
 # --------------------------------------------------
@@ -40,6 +41,7 @@ app.add_middleware(
         "http://localhost:5500",
         "http://127.0.0.1:5501",
         "http://localhost:5501",
+        *[origin.strip().rstrip("/") for origin in os.getenv("FRONTEND_ORIGINS", "").split(",") if origin.strip()],
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -54,11 +56,14 @@ def get_firebase_cred_path():
     # 1. 환경변수에서 먼저 찾기
     env_path = (
         os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY")
         or os.getenv("FIREBASE_CREDENTIALS")
         or os.getenv("FIREBASE_CREDENTIALS_PATH")
     )
 
-    if env_path and os.path.exists(env_path):
+    if env_path:
+        if not os.path.isfile(env_path):
+            raise FileNotFoundError("설정한 Firebase 서비스 계정 파일을 찾을 수 없습니다.")
         return env_path
 
     # 2. backend 폴더와 프로젝트 루트 둘 다 확인
@@ -82,13 +87,17 @@ def get_firebase_cred_path():
         if matches:
             return str(matches[0])
 
-    raise FileNotFoundError("Firebase 서비스 계정 JSON 파일을 찾을 수 없습니다.")
+    return None  # Use Application Default Credentials when no key file is set.
 
 
 if not firebase_admin._apps:
-    cred_path = get_firebase_cred_path()
-    cred = credentials.Certificate(cred_path)
-    firebase_admin.initialize_app(cred)
+    service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+    if service_account_json:
+        cred = credentials.Certificate(json.loads(service_account_json))
+    else:
+        cred_path = get_firebase_cred_path()
+        cred = credentials.Certificate(cred_path) if cred_path else credentials.ApplicationDefault()
+    firebase_admin.initialize_app(cred, {"projectId": os.getenv("FIREBASE_PROJECT_ID", "ai-news-card")})
 
 db = firestore.client()
 
@@ -308,6 +317,21 @@ def is_expired_subscription(data: dict, target_date: str):
 @app.get("/")
 def root():
     return {"message": "FastAPI + Firebase 서버 실행 중"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/catalog")
+def catalog():
+    return {
+        "categories": ["economy", "it_science", "politics", "society", "world", "culture"],
+        "durations": [7, 14, 28],
+        "consent_version": os.getenv("CONSENT_VERSION", "v1"),
+        "capabilities": {"settings_change": False, "feedback": False},
+    }
 
 
 @app.get("/me")
@@ -667,4 +691,4 @@ def expire_subscriptions_for_engine(
         "target_date": target_date,
         "count": len(expired_items),
         "subscriptions": expired_items,
-    } 
+    }
