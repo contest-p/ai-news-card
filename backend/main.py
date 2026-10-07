@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timezone
 from typing import Optional, Literal, Any
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
@@ -10,12 +11,16 @@ from pydantic import BaseModel
 
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
+try:
+    from .engine_api import create_router, SubscriptionSettings, KST, instant
+except ImportError:
+    from engine_api import create_router, SubscriptionSettings, KST, instant
 
 
 # --------------------------------------------------
 # 환경변수 로드
 # --------------------------------------------------
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 app = FastAPI()
 
@@ -43,7 +48,9 @@ app.add_middleware(
 def get_firebase_cred_path():
     # .env에 FIREBASE_SERVICE_ACCOUNT_KEY가 있으면 우선 사용
     env_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY")
-    if env_path and os.path.exists(env_path):
+    if env_path:
+        if not os.path.isfile(env_path):
+            raise FileNotFoundError("FIREBASE_SERVICE_ACCOUNT_KEY 파일을 찾을 수 없습니다.")
         return env_path
 
     # 현재 폴더 기준 기본 파일명 후보들
@@ -53,16 +60,17 @@ def get_firebase_cred_path():
     ]
 
     for path in candidates:
-        if os.path.exists(path):
-            return path
+        for candidate in (Path(__file__).parent / path, Path(path)):
+            if candidate.is_file():
+                return str(candidate)
 
-    raise FileNotFoundError("Firebase 서비스 계정 JSON 파일을 찾을 수 없습니다.")
+    return None  # 로컬 gcloud 로그인/배포 서비스 계정의 ADC 사용
 
 
 if not firebase_admin._apps:
     cred_path = get_firebase_cred_path()
-    cred = credentials.Certificate(cred_path)
-    firebase_admin.initialize_app(cred)
+    cred = credentials.Certificate(cred_path) if cred_path else credentials.ApplicationDefault()
+    firebase_admin.initialize_app(cred, {"projectId": os.getenv("FIREBASE_PROJECT_ID", "ai-news-card")})
 
 db = firestore.client()
 
@@ -125,6 +133,7 @@ class SubscriptionSaveRequest(BaseModel):
     plan: str
     status: Literal["active", "cancelled", "expired"] = "active"
     expires_at: Optional[datetime] = None
+    engine_settings: Optional[SubscriptionSettings] = None
 # --------------------------------------------------
 # 기본 라우트
 # --------------------------------------------------
@@ -219,6 +228,20 @@ def save_subscription(
         subscription_data["created_at"] = now
         subscription_data["cancelled_at"] = now if payload.status == "cancelled" else None
 
+    if payload.engine_settings is not None:
+        if payload.status != "active":
+            raise HTTPException(422, "엔진 설정은 활성 구독에만 저장할 수 있습니다.")
+        if existing_doc.exists and old_data.get("status") == "active" and old_data.get("start_date"):
+            raise HTTPException(409, "활성 구독 설정 변경 정책은 별도 API에서 처리해야 합니다.")
+        from datetime import timedelta
+        import uuid
+        start = now.astimezone(KST).date() + timedelta(days=1)
+        end = start + timedelta(days=payload.engine_settings.duration_days)
+        subscription_data.update(payload.engine_settings.model_dump())
+        subscription_data.update(start_date=start.isoformat(), end_date_exclusive=end.isoformat(),
+                                 expires_at=instant(end), timezone="Asia/Seoul", consent_at=now,
+                                 subscription_id=uuid.uuid4().hex)
+
     sub_ref.set(subscription_data, merge=True)
 
     return {
@@ -280,3 +303,6 @@ def cancel_subscription(current_user: dict = Depends(get_current_user)):
         "message": "구독이 해제되었습니다.",
         "subscription": serialize_dict(updated_doc)
     }
+
+
+app.include_router(create_router(lambda: db))

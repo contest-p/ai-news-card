@@ -9,7 +9,7 @@ from engine.firestore_connection import create_client
 
 
 # These are gaps to discuss with Backend, not an EngineGateway implementation.
-SETTING_FIELDS = ("categories", "keywords", "send_time", "start_date", "end_date_exclusive")
+SETTING_FIELDS = ("categories", "keywords", "delivery_hour_kst", "start_date", "end_date_exclusive")
 
 
 def inspect_database(client, limit: int = 100) -> dict:

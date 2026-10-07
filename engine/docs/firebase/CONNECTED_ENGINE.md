@@ -70,8 +70,8 @@ ENGINE_TEST_SUBSCRIPTION_ID=
 ENGINE_ARCHIVE_RETENTION_DAYS=
 ```
 
-API base URL은 엔진 전용 prefix다. [API 연결 규격](ENGINE_API_CONTRACT.md)은 현재 제안이며
-백엔드가 경로·응답과 서비스 인증을 구현하거나 합의된 기존 API로 어댑터를 조정해야 한다.
+API base URL은 엔진 전용 prefix다. [API 연결 규격](ENGINE_API_CONTRACT.md)에 맞춘
+백엔드 구현과 설정 방법은 [백엔드 엔진 API 안내](../../../backend/ENGINE_API.md)를 참고한다.
 사용자용 /subscriptions/me는 전체 발송 대상 조회를 대체하지 않는다.
 기존 OPENAI_*와 SMTP_* 설정도 필요하다. ENGINE_WEB_BASE_URL은 실제 HTTPS 웹 origin이다.
 
@@ -101,7 +101,7 @@ SMTP 수락 1건, 배치 오류 없음일 때 종료 코드 0이다. 대상 없�
 
 ## 확인 결과
 
-2026-10-07 실제 확인 기록:
+2026-10-07 초기 확인 기록 (아래 최신 결과에서 권한 및 API 연결 완료):
 
 - Google Cloud CLI 설치 및 본인 계정 ADC 로그인 완료.
 - ai-news-card quota project 설정 실패: serviceusage.services.use 권한 없음.
@@ -119,6 +119,14 @@ DB 서버 트랜잭션과 실제 메일 수신 완료로 보고하지 않는다.
 현재 RAG는 no_evidence_search 기본값이며 과거 벡터 검색은 후속 작업이다. 카드는 공유 프론트 템플릿으로 렌더한다.
 2026-10-07 별도 템플릿 테스트 메일을 실제 전송했고 사용자가 수신함 도착·정상 표시를 확인했다. DB/API 구독 통합 발송 검증과는 별개다.
 운영 예약·사용자 전체 발송·개인정보 자동 정리는 아직 활성화하지 않았다.
+
+2026-10-07 최신 결과:
+
+- 초대 후 ADC quota project 설정과 실제 Firestore 읽기·쓰기 확인 완료.
+- 로컬 백엔드 엔진 API 5개 구현 및 엔진 HttpEngineGateway 연결 확인 완료.
+- 별도 테스트 문서로 스냅샷 고정과 피드백 토큰 멱등 발급·해시 저장을 검증한 뒤 정리.
+- 기존 팀 구독은 해제 상태로 발송/만료 목록 0건. 실제 활성 구독 통합 발송은 미검증.
+- 백엔드 자동 테스트 12개, 엔진 자동 테스트 234개 통과.
 
 공식 인증 근거: [로컬 ADC](https://docs.cloud.google.com/docs/authentication/set-up-adc-local-dev-environment),
 [서버 Firestore 권한](https://firebase.google.com/docs/firestore/security/overview).

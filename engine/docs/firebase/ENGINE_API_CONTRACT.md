@@ -1,8 +1,8 @@
 # 엔진 ↔ 백엔드 연결 규격 제안
 
-2026-10-07. 엔진 HTTP 어댑터를 구현했다. 아래 경로·응답·인증은 **백엔드 구현 완료를 뜻하지 않는다**.
-현재 backend/main.py의 사용자용 /me, /subscriptions/* 경로는 이 API를 대체하지 않는다.
-백엔드와 아래 규격을 맞추거나, 합의된 규격에 맞춰 HttpEngineGateway를 수정한다.
+2026-10-07. 엔진 HTTP 어댑터와 backend/engine_api.py의 대응 API를 구현했다.
+로컬 실제 HTTP·Firestore 연결을 확인했다. 아래 규격은 백엔드 담당자의 리뷰·팀 통합이 필요하다.
+실행법과 구독 필드 확장은 [백엔드 연결 안내](../../../backend/ENGINE_API.md)를 참고한다.
 
 ENGINE_API_BASE_URL은 엔진 전용 API prefix 전체다. 모든 요청은 서버용
 `Authorization: Bearer <ENGINE_API_TOKEN>`을 사용한다. 사용자 Firebase ID 토큰을 사용하지 않는다.
