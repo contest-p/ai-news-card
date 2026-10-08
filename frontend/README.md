@@ -1,3 +1,5 @@
+> **2026-10-08 최신 구현:** [프론트엔드 구현 보완](FRONTEND_COMPLETION.md)을 먼저 확인하세요. 설정 변경·확인 해제·피드백·계정 삭제 요청은 새 백엔드 계약에 연결되었습니다. 아래 이전 기록의 준비 중 안내는 최신 구현으로 대체됩니다.
+
 # Frontend — 뉴스 브리핑
 
 바닐라 HTML/CSS/JavaScript 앱입니다. 프론트는 Firebase로 Google 로그인하고, Firebase ID Token을 백엔드에 전달해 사용자와 구독을 Firestore에 저장합니다. DB 접근과 엔진 인증은 서버에서 처리합니다.

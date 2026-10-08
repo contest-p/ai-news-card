@@ -12,11 +12,13 @@ function harness(respond) {
   const user = { uid: 'user-1', email: 'test@example.invalid' };
   const context = {
     window: { APP_CONFIG: { apiBaseUrl: 'http://127.0.0.1:8000', firebase: {} }, addEventListener() {}, scrollTo() {} },
-    location, history: { pushState(_a, _b, url) { location.pathname = url; } },
-    document: { querySelector: (selector) => selector === '#delivery-hour' ? { value: '10' } : selector === '.modal-backdrop' ? null : button },
+    location, history: { pushState(_a, _b, url) { location.pathname = url; }, replaceState(_a,_b,url) { location.hash=''; location.search=''; location.pathname=url; } },
+    document: { querySelectorAll: () => [], querySelector: (selector) => selector === '#delivery-hour' ? { value: '10' } : selector === '.modal-backdrop' ? null : button },
     crypto: { randomUUID: () => 'attempt-id' }, URLSearchParams,
     createFirebaseAuth: () => ({ getToken: async (force) => { tokens.push(force); return 'id-token'; },
       restore: async () => user, signIn: async () => user }),
+    Intl, Date, encodeURIComponent,
+    setTimeout,
     fetch: async (url, options) => {
       requests.push({ url, options });
       const { status = 200, body = {} } = await respond(url, options);
@@ -30,15 +32,16 @@ function harness(respond) {
     session = { user: { uid: 'user-1' } };
     catalog = { categories: ['economy'], consent_version: 'v1', capabilities: {} };
     setup = { consent: true, categories: ['economy'], keywords: ['AI'], delivery_hour_kst: 9, duration_days: 14 };
-    globalThis.actions = { api, createSubscription, refreshSubscription, cancelSubscription, normalizeSubscription, getSession, onAction, openCancelModal, wire, addKeyword, endedPage, resolveFeedback };
-    globalThis.state = () => ({ subscription: currentSubscription, error: pageError, setup });
+    currentSubscription = normalizeSubscription(${JSON.stringify(subscription)});
+    globalThis.actions = { api, createSubscription, refreshSubscription, cancelSubscription, saveSettings, requestDeletion, reloadDeletion, consumeFeedbackToken, submitFeedback, chooseRating, normalizeSubscription, getSession, onAction, openCancelModal, wire, addKeyword, endedPage, resolveFeedback, renderRoute, managePage, accountPage, feedbackPage, loadCatalog };
+    globalThis.state = () => ({ subscription: currentSubscription, error: pageError, setup, draftSettings, deletionRequest, feedbackToken, feedbackValid, feedbackError, feedbackDraft, chosenRating, feedbackSubmitted });
     globalThis.switchAccount = (uid) => { session = { user: { uid } }; };
   `, context);
   return { context, requests, tokens };
 }
 
 const subscription = { status: 'active', uid: 'user-1', subscription_id: 'period-id', categories: ['economy'],
-  keywords: ['AI'], delivery_hour_kst: 10, duration_days: 14, start_date: '2026-10-08', end_date_exclusive: '2026-10-22' };
+  keywords: ['AI'], delivery_hour_kst: 10, duration_days: 14, settings_version: 1, start_date: '2026-10-08', end_date_exclusive: '2026-10-22' };
 
 test('subscription form syncs user, saves engine fields and reads actual backend routes', async () => {
   const h = harness(async () => ({ body: { subscription } }));
@@ -70,11 +73,12 @@ test('empty subscription is normal; a later failure cannot display stale data', 
   assert.equal(h.context.state().error, '연결 실패');
 });
 
-test('cancel uses owner-scoped PATCH and normalizes result', async () => {
+test('cancel uses captured subscription identity and explicit confirmation', async () => {
   const h = harness(async () => ({ body: { subscription: { ...subscription, status: 'cancelled' } } }));
   await h.context.actions.cancelSubscription();
-  assert.equal(h.requests[0].url, 'http://127.0.0.1:8000/subscriptions/cancel');
-  assert.equal(h.requests[0].options.method, 'PATCH');
+  assert.equal(h.requests[0].url, 'http://127.0.0.1:8000/subscriptions/period-id/cancel');
+  assert.equal(h.requests[0].options.method, 'POST');
+  assert.deepEqual(JSON.parse(h.requests[0].options.body), { confirm: true });
   assert.equal(h.context.state().subscription.status, 'cancelled');
 });
 
@@ -137,10 +141,10 @@ test('dynamically opened cancel modal binds confirm and close exactly once', asy
   await h.context.actions.onAction('open-cancel');
   await buttons[2].listeners[0]();
   assert.equal(h.context.state().subscription.status, 'cancelled');
-  assert.equal(h.requests.filter(r => r.options.method === 'PATCH').length, 1);
+  assert.equal(h.requests.filter(r => r.url.endsWith('/cancel')).length, 1);
 });
 
-test('concurrent cancel clicks send one PATCH and release lock after failure', async () => {
+test('concurrent cancel clicks send one confirmed request and release lock after failure', async () => {
   let release;
   const blocked = new Promise(resolve => { release = resolve; });
   let fails = true;
@@ -184,6 +188,7 @@ test('category, duration, keyword remove, consent and hour controls bind to sett
 
 test('direct ended route with no subscription never claims a subscription ended', () => {
   const h = harness(async () => ({ body: {} }));
+  vm.runInContext('currentSubscription=null;',h.context);
   const html = h.context.actions.endedPage();
   assert(!html.includes('구독이 종료되었어요'));
   assert(html.includes('새 구독 시작하기'));
@@ -197,5 +202,119 @@ test('unimplemented mail feedback reports preparation instead of calling missing
   vm.runInContext('catalog.capabilities.feedback=false;feedbackToken="fixture-only";', h.context);
   await h.context.actions.resolveFeedback();
   assert.equal(h.requests.length, 0);
-  assert.match(status.textContent, /피드백 기능은 준비 중/);
+  assert.match(h.context.state().feedbackError, /피드백 기능은 준비 중/);
+});
+
+
+test('settings submit carries identity and optimistic version, preserves input on conflict', async () => {
+  const h=harness(async()=>({status:409,body:{detail:'SETTINGS_CONFLICT'}}));
+  vm.runInContext(`draftSettings={categories:['economy'],keywords:['AI'],delivery_hour_kst:18,expected_settings_version:1};`,h.context);
+  await h.context.actions.saveSettings();
+  const request=h.requests[0];
+  assert.equal(new URL(request.url).pathname,'/subscriptions/period-id/settings');
+  assert.equal(request.options.method,'PATCH');
+  assert.deepEqual(JSON.parse(request.options.body),{categories:['economy'],keywords:['AI'],delivery_hour_kst:18,expected_settings_version:1});
+  assert.equal(h.context.state().draftSettings.delivery_hour_kst,18);
+  assert.match(h.context.state().error,/최신 설정/);
+});
+
+test('saved settings show server pending date and normalized keywords',async()=>{
+  const next={categories:['economy'],keywords:['AI'],delivery_hour_kst:18,settings_version:2,effective_date:'2026-10-09'};
+  const h=harness(async()=>({body:{subscription:{...subscription,settings_version:2,next_settings:next}}}));
+  vm.runInContext(`draftSettings={categories:['economy'],keywords:['ＡＩ'],delivery_hour_kst:18,expected_settings_version:1};catalog.capabilities.settings_change=true;`,h.context);
+  await h.context.actions.saveSettings();
+  assert.equal(h.context.state().subscription.next_settings.effective_date,'2026-10-09');
+  assert.equal(h.context.state().draftSettings,null);
+  const html=h.context.actions.managePage();
+  assert.match(html,/부터 적용/);assert.match(html,/변경 저장하기/);
+  assert.equal(h.context.state().draftSettings.expected_settings_version,2);
+});
+
+test('account deletion requires checkbox and explicit POST, repeated clicks cannot duplicate request',async()=>{
+  let release;const blocked=new Promise(resolve=>{release=resolve;});
+  const h=harness(async()=>{await blocked;return {body:{request_id:'request-one',status:'pending',sending_stopped:true}};});
+  h.context.document.querySelector=()=>({checked:false});
+  await h.context.actions.requestDeletion();assert.equal(h.requests.length,0);
+  h.context.document.querySelector=()=>({checked:true});
+  const first=h.context.actions.requestDeletion();
+  await h.context.actions.requestDeletion();release();await first;
+  assert.equal(h.requests.length,1);
+  assert.equal(new URL(h.requests[0].url).pathname,'/account-deletion-requests');
+  assert.deepEqual(JSON.parse(h.requests[0].options.body),{confirm:true});
+  assert.equal(h.context.state().subscription,null);
+  assert.equal(h.context.state().deletionRequest.request_id,'request-one');
+  assert.match(h.context.actions.accountPage(),/새 브리핑 발송을 중단/);
+});
+
+test('fragment is erased immediately, resolving is anonymous and never auto-submits rating',async()=>{
+  const h=harness(async()=>({body:{valid:true,current_rating:'down',reasons:['other'],comment:'이미 남긴 의견'}}));
+  h.context.location.pathname='/feedback';h.context.location.hash='#t=fixture_feedback_token&rating=up';
+  h.context.actions.consumeFeedbackToken();
+  assert.equal(h.context.location.hash,'');
+  await h.context.actions.resolveFeedback();
+  assert.equal(h.requests.length,1);
+  assert.equal(new URL(h.requests[0].url).pathname,'/feedback/resolve');
+  assert.equal(h.requests[0].options.headers.Authorization,undefined);
+  assert.equal(JSON.parse(h.requests[0].options.body).token,'fixture_feedback_token');
+  assert(!h.requests[0].url.includes('fixture_feedback_token'));
+  assert.equal(h.context.state().chosenRating,'down');
+  assert.equal(h.context.state().feedbackDraft.comment,'이미 남긴 의견');
+  assert.equal(h.tokens.length,0);
+  assert(!h.context.actions.feedbackPage().includes('메일 수신 예시'));
+});
+
+test('transient resolve failure keeps token for retry; expired link disables evaluation',async()=>{
+  let response={status:503,body:{detail:'일시적인 오류'}};
+  const h=harness(async()=>response);
+  vm.runInContext('feedbackToken="fixture_token";',h.context);
+  h.context.location.pathname='/feedback';
+  await h.context.actions.resolveFeedback();assert.equal(h.context.state().feedbackToken,'fixture_token');
+  response={status:410,body:{detail:'TOKEN_EXPIRED'}};
+  await h.context.actions.resolveFeedback();
+  assert.equal(h.context.state().feedbackToken,null);
+  assert.equal(h.context.state().feedbackValid,false);
+  assert.match(h.context.state().feedbackError,/만료/);
+});
+
+test('confirmed feedback uses stable reason codes, locks duplicate submissions and keeps comment on error',async()=>{
+  let release;const blocked=new Promise(resolve=>{release=resolve;});
+  const h=harness(async()=>{await blocked;return {status:503,body:{detail:'다시 시도'}};});
+  vm.runInContext('feedbackToken="fixture_token";feedbackValid=true;chosenRating="up";',h.context);
+  h.context.document.querySelectorAll=()=>[{value:'useful'}];
+  h.context.document.querySelector=()=>({value:'의견 보존'});
+  const first=h.context.actions.submitFeedback();
+  await h.context.actions.submitFeedback();release();await first;
+  assert.equal(h.requests.length,1);
+  assert.deepEqual(JSON.parse(h.requests[0].options.body),{token:'fixture_token',rating:'up',reasons:['useful'],comment:'의견 보존'});
+  assert.equal(h.context.state().feedbackDraft.comment,'의견 보존');
+  assert.equal(h.context.state().feedbackSubmitted,false);
+});
+
+test('feedback route entered through navigation consumes fragment without loading login SDK',async()=>{
+  const h=harness(async()=>({body:{valid:true,current_rating:null}}));
+  h.context.location.pathname='/feedback';h.context.location.hash='#t=fixture_token&rating=up';
+  await h.context.actions.renderRoute();
+  assert.equal(h.requests.length,1);
+  assert.equal(h.context.state().chosenRating,'up');
+  assert.equal(h.tokens.length,0);
+});
+
+test('changing consent version requires new checkbox confirmation and keeps form input',async()=>{
+  const h=harness(async()=>({body:{categories:['economy'],consent_version:'v2'}}));
+  await h.context.actions.loadCatalog();
+  assert.equal(h.context.state().setup.consent,false);
+  assert.equal(h.context.state().setup.keywords[0],'AI');
+});
+
+
+test('late feedback resolution cannot restore the previous mail token data',async()=>{
+  let release;const blocked=new Promise(resolve=>{release=resolve;});
+  const h=harness(async()=>{await blocked;return {body:{valid:true,current_rating:'down',comment:'old private comment'}};});
+  h.context.location.pathname='/feedback';h.context.location.hash='#t=first_token';
+  h.context.actions.consumeFeedbackToken();const first=h.context.actions.resolveFeedback();
+  h.context.location.hash='#t=second_token';h.context.actions.consumeFeedbackToken();
+  release();await first;
+  assert.equal(h.context.state().feedbackToken,'second_token');
+  assert.equal(h.context.state().feedbackDraft.comment,'');
+  assert.equal(h.context.state().feedbackValid,false);
 });

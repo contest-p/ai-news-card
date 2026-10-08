@@ -36,3 +36,21 @@ main{min-height:calc(100vh - 150px)}.container{width:min(1080px,calc(100% - 48px
 
 .ended-art{height:220px;min-height:0;overflow:hidden;margin-bottom:12px}
 .ended-art .art-orbit{width:210px;max-width:80%;}
+
+/* Editable settings and private account/feedback forms. */
+fieldset{border:0;padding:0;margin:16px 0;min-width:0}
+legend,.form-label{display:block;font-weight:700;font-size:14px;margin:12px 0 9px}
+fieldset:disabled{opacity:.65}
+button:disabled{cursor:wait;opacity:.6}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.text-link{color:var(--blue);text-decoration:underline;text-underline-offset:3px}
+.account-page{max-width:760px}.account-card{padding:28px;margin-top:22px}.account-card p{line-height:1.8}
+.manage-settings .keyword-row,.manage-settings .chips,.feedback-shell .chips{padding-left:0}
+.manage-settings .select{width:min(100%,320px)}
+.manage-settings .details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.manage-settings .detail{border:0;min-width:0;overflow-wrap:anywhere}
+.pending-line strong{overflow-wrap:anywhere;text-align:right;min-width:0}
+.keyword-row .field{min-width:0}.token-list{overflow-wrap:anywhere}
+.feedback-shell .chips{gap:10px}.feedback-shell input[type=checkbox]{accent-color:var(--orange)}
+.feedback-shell .textarea{width:100%;min-height:120px;box-sizing:border-box}
+@media(max-width:640px){.account-card{padding:20px}.manage-settings .details-grid{grid-template-columns:1fr}.keyword-row{flex-wrap:wrap}.keyword-row .field{flex:1 1 160px}.feedback-vote{flex-wrap:wrap}}

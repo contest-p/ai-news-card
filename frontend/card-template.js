@@ -32,7 +32,7 @@ function validateCard(data, key, maxTerms) {
 }
 function validSource(source) {
   if (!source?.url) return false;
-  try { const url = new URL(source.url); return url.protocol === "https:" || url.protocol === "http:"; } catch { return false; }
+  try { const url = new URL(source.url); return url.protocol === "https:" && !url.username && !url.password; } catch { return false; }
 }
 function sentenceMarkup(sentence, sources, cardNumber) {
   const source = sources.get(sentence.source_article_id);
@@ -87,3 +87,16 @@ export const cardTemplateFixture = Object.freeze({
   sources: [{ article_id: "article_fixture_001", publisher: "테스트 출처", url: "https://example.com/news/fixture-001", published_at: "2026-10-05T21:00:00Z" }],
   ai_generated: true,
 });
+
+// Deliberately fills the PRD limits; synthetic copy, never presented as actual news.
+const repeated = (text, limit) => [...text.repeat(Math.ceil(limit / [...text].length))].slice(0, limit).join("");
+export const cardTemplateMaxFixture = {
+  ...cardTemplateFixture,
+  title: repeated("최대 길이 가상 뉴스 제목 ", 60),
+  card1: { sentences: [{ ...cardTemplateFixture.card1.sentences[0], text: repeated("현재 기사 핵심을 설명하는 가상 문장입니다. ", 400) }],
+    terms: [{term:"가상 용어 하나",definition:repeated("가상 용어 풀이입니다. ",100),source_article_id:"article_fixture_001"},
+            {term:"가상 용어 둘",definition:repeated("가상 설명입니다. ",100),source_article_id:"article_fixture_001"}] },
+  card2: { sentences: [{ text: repeated("과거 근거를 설명하는 가상 문장입니다. ",400),source_article_id:"article_fixture_past",temporal_role:"past",as_of:"2025-10-01" }],
+    terms: [] },
+  sources: [...cardTemplateFixture.sources,{article_id:"article_fixture_past",publisher:"가상 과거 출처",url:"https://example.com/news/past-fixture",published_at:"2025-10-01T00:00:00Z"}],
+};
