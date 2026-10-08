@@ -109,8 +109,13 @@ class HttpEngineGateway:
                               query={"now": now.isoformat()})
         return Eligibility(result["eligible"], result["reason"])
 
-    def issue_feedback_token(self, job_id):
-        result = self.request("/feedback-tokens", body={"job_id": job_id}, idempotency_key=job_id)
+    def issue_feedback_token(self, job_id, *, environment="production"):
+        if environment not in {"production", "test"}:
+            raise ValueError("DELIVERY_ENVIRONMENT_INVALID")
+        body = {"job_id": job_id}
+        if environment != "production":
+            body["environment"] = environment
+        result = self.request("/feedback-tokens", body=body, idempotency_key=job_id)
         token = result.get("token")
         if not isinstance(token, str) or not token.strip() or len(token) > 4096:
             raise GatewayUnavailable("BACKEND_FEEDBACK_TOKEN_INVALID")

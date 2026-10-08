@@ -15,7 +15,7 @@ TLS 필수(로컬 localhost/127.0.0.1은 HTTP 가능), timeout 20초, redirect �
 | GET /subscriptions/expired | now=offset 포함 ISO 8601 | {"subscriptions": [자연 만료 스냅샷]} |
 | GET /subscriptions/{id}/snapshot | scheduled_date_kst=YYYY-MM-DD | {"subscription": 스냅샷} |
 | GET /subscriptions/{id}/eligibility | now=offset 포함 ISO 8601 | {"eligible": true/false, "reason": 상태 이유} |
-| POST /feedback-tokens | {"job_id": 고정 작업 ID}; Idempotency-Key=job_id | {"token": 원문 opaque 토큰} |
+| POST /feedback-tokens | {"job_id": 고정 작업 ID, "environment": "production" 또는 "test"}; 생략 시 production, Idempotency-Key=job_id | {"token": 원문 opaque 토큰} |
 
 목록은 최대 1000건이며 현 어댑터에는 pagination이 없다. 이 규모를 넘기기 전 pagination 계약을 추가한다.
 대상 없음은 subscriptions=[]로 반환한다. DB/권한/API 실패는 오류 상태로 반환하며 빈 목록으로 바꾸지 않는다.
@@ -45,7 +45,7 @@ due 목록은 발송 예정 시각부터 기한 전까지만 포함한다. 만�
 수동 해제·삭제 요청·재구독은 제외한다. 엔진은 기한을 추가로 검증하고 SMTP 직전 최신 eligibility를 확인한다.
 구독 변경·재구독 정책을 엔진이 추측해 만들지 않는다.
 
-피드백 토큰 발급은 job_id 기준 멱등 처리가 필요하다. HTTP 응답 유실 후 같은 작업이 다시 요청해도
+피드백 토큰 발급은 environment와 job_id 조합 기준으로 멱등 처리한다. 운영은 engine_delivery_jobs, 테스트는 engine_test_delivery_jobs만 조회한다. 같은 작업 ID여도 토큰과 피드백 문서를 분리하며 기존 운영 토큰은 유지한다. HTTP 응답 유실 후 같은 작업이 다시 요청해도
 이미 유효한 링크를 무효화하지 않아야 한다. 해시 저장·유효 기간·피드백 저장·삭제는 백엔드 담당이다.
 연결 테스트는 실제 테스트 구독을 사용하므로 발급 토큰도 실제 백엔드에 저장될 수 있다.
 
@@ -53,3 +53,11 @@ Firestore 엔진 컬렉션은 engine_articles/engine_article_ids/engine_delivery
 engine_mail_archives다. DB 구조·인덱스·권한·보관 정책은 백엔드 리뷰 후 팀 DB에 통합한다.
 시험 실행은 engine_test_delivery_jobs/engine_test_generation_jobs/engine_test_mail_archives를 사용한다.
 기사 데이터는 같은 engine_articles에 저장한다. users/subscriptions는 엔진이 쓰지 않는다.
+
+
+## 개인정보 정리 독립 실행 (2026-10-08)
+
+`POST /privacy-cleanup`은 `{"now": offset 포함 현재 ISO 8601 시각}`과 서버 Bearer 인증을 받는다.
+완료 시 `{"status":"completed", ...}`를 반환하고 부분 실패·처리량 한도 초과는 오류로 반환한다.
+발송 여부와 관계없이 `engine.tools.privacy_cleanup`에서 호출할 수 있다. AI·SMTP 설정을 요구하지 않는다.
+실행 방법과 예약 적용 범위는 [연결 보완 기록](../../../docs/10_연결_보완_2026-10-08.md)을 참고한다.

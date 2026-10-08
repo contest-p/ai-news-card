@@ -261,3 +261,63 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(PrivacyService(self.db).related("user_id","test-user"))
         self.assertNotIn(child,self.db.data)
         self.assertNotIn("engine_delivery_jobs/"+job_id,self.db.data)
+
+
+class ConnectionFixTests(unittest.TestCase):
+    setUp = frontend_tests.FrontendApiTests.setUp
+    subscribe = LifecycleTests.subscribe
+
+    def test_legacy_document_settings_change_uses_original_reference(self):
+        saved = self.subscribe()
+        self.db.data["subscriptions/legacy-row"] = self.db.data.pop("subscriptions/test-user")
+        for route in ("/subscriptions/me", "/subscriptions/current"):
+            response = self.client.get(route, headers=self.headers)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["subscription"]["subscription_id"], saved["subscription_id"])
+        body = {"categories": ["world"], "keywords": [], "delivery_hour_kst": 18, "expected_settings_version": 1}
+        response = self.client.patch("/subscriptions/"+saved["subscription_id"]+"/settings", headers=self.headers, json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.db.data["subscriptions/legacy-row"]["settings_version"], 2)
+        self.assertNotIn("subscriptions/test-user", self.db.data)
+        self.db.data["subscriptions/legacy-row"]["uid"] = "other-user"
+        self.assertEqual(self.client.patch("/subscriptions/"+saved["subscription_id"]+"/settings", headers=self.headers, json=body).status_code, 404)
+
+    def test_legacy_document_id_fallback_and_ambiguous_identity(self):
+        self.subscribe()
+        data = self.db.data.pop("subscriptions/test-user")
+        data.pop("subscription_id")
+        self.db.data["subscriptions/legacy-row"] = data
+        body = {"categories": ["world"], "keywords": [], "delivery_hour_kst": 18, "expected_settings_version": 1}
+        response = self.client.patch("/subscriptions/legacy-row/settings", headers=self.headers, json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.db.data["subscriptions/duplicate"] = deepcopy(self.db.data["subscriptions/legacy-row"])
+        self.assertEqual(self.client.patch("/subscriptions/legacy-row/settings", headers=self.headers, json={**body,"expected_settings_version":2}).status_code, 409)
+
+    def test_test_and_production_jobs_have_separate_tokens_and_feedback(self):
+        saved = self.subscribe()
+        job_id = "f" * 64
+        now = datetime.now(timezone.utc)
+        job = {"user_id":"test-user", "subscription_id":saved["subscription_id"], "mail_kind":"daily_briefing",
+               "scheduled_date_kst":now.astimezone(timezone(timedelta(hours=9))).date().isoformat(),
+               "status":"processing", "selected_article_id":"article"}
+        for name in ("engine_delivery_jobs", "engine_test_delivery_jobs"):
+            self.db.data[name+"/"+job_id] = deepcopy(job)
+        with patch.dict(os.environ, {"FEEDBACK_TOKEN_SECRET":"fixture-secret-"*4}):
+            service = EngineService(self.db)
+            production = service.feedback_token(job_id,job_id)["token"]
+            isolated = service.feedback_token(job_id,job_id,environment="test")["token"]
+            self.assertNotEqual(production, isolated)
+            self.assertEqual(service.feedback_token(job_id,job_id)["token"],production)
+            feedback = FeedbackService(self.db)
+            feedback.submit(FeedbackBody(token=production,rating="up"))
+            feedback.submit(FeedbackBody(token=isolated,rating="down"))
+            self.assertEqual(feedback.resolve(production)["current_rating"],"up")
+            self.assertEqual(feedback.resolve(isolated)["current_rating"],"down")
+            self.assertEqual(self.db.data["feedbacks/test-"+job_id]["environment"],"test")
+            del self.db.data["engine_delivery_jobs/"+job_id]
+            with self.assertRaises(HTTPException) as raised:
+                service.feedback_token(job_id,job_id)
+            self.assertEqual(raised.exception.status_code,404)
+
+if __name__ == "__main__":
+    unittest.main()

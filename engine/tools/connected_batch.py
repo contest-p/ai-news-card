@@ -42,7 +42,7 @@ class TestGateway:
         return self.gateway.check_delivery_eligibility(subscription_id, now)
 
     def issue_feedback_token(self, job_id):
-        return self.gateway.issue_feedback_token(job_id)
+        return self.gateway.issue_feedback_token(job_id, environment="test")
 
 
 def test_sender(settings):

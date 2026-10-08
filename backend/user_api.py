@@ -77,7 +77,7 @@ class FeedbackService:
         owner = self.db.collection("users").document(token["user_id"]).get(transaction=tx)
         if not owner.exists or deleted(owner.to_dict()):
             raise HTTPException(410, "TOKEN_EXPIRED")
-        ref = self.db.collection("feedbacks").document(token["job_id"])
+        ref = self.db.collection("feedbacks").document(token.get("feedback_id", token["job_id"]))
         existing = ref.get(transaction=tx)
         return token, ref, existing.to_dict() if existing.exists else {}
 
@@ -94,7 +94,7 @@ class FeedbackService:
         def save(tx):
             token, ref, existing = self.resolve_token(body.token, tx)
             now = utc(self.clock())
-            data = {"job_id": token["job_id"], "subscription_id": token["subscription_id"],
+            data = {"job_id": token["job_id"], "environment": token.get("environment", "production"), "subscription_id": token["subscription_id"],
                     "user_id": token["user_id"], "rating": body.rating, "reasons": body.reasons,
                     "comment": body.comment.strip(), "created_at": existing.get("created_at", now),
                     "updated_at": now}
@@ -103,26 +103,52 @@ class FeedbackService:
         return save(self.db.transaction())
 
 
+def owned_subscription(db, uid, subscription_id=None, transaction=None):
+    fixed = db.collection("subscriptions").document(uid).get(transaction=transaction)
+    if subscription_id is None and fixed.exists and fixed.to_dict().get("uid") == uid:
+        return fixed
+    if subscription_id is None:
+        query = db.collection("subscriptions").where(filter=FieldFilter("uid", "==", uid))
+    else:
+        query = db.collection("subscriptions").where(filter=FieldFilter("subscription_id", "==", subscription_id))
+    rows = list(query.limit(101).stream(transaction=transaction))
+    if len(rows) > 100:
+        raise HTTPException(503, "SUBSCRIPTION_QUERY_LIMIT_EXCEEDED")
+    matches = [row for row in rows if row.to_dict().get("uid") == uid]
+    if subscription_id is not None:
+        # Legacy documents may still identify their subscription by document ID.
+        direct = db.collection("subscriptions").document(subscription_id).get(transaction=transaction)
+        if direct.exists and direct.to_dict().get("uid") == uid and direct.to_dict().get("subscription_id", direct.id) == subscription_id:
+            matches = [row for row in matches if row.reference.path != direct.reference.path] + [direct]
+        if len(matches) > 1:
+            raise HTTPException(409, "SUBSCRIPTION_NOT_UNIQUE")
+        return matches[0] if matches else None
+    return max(matches, key=lambda row: (row.to_dict().get("status") == "active", str(row.to_dict().get("created_at", "")))) if matches else None
+
+
 def create_user_router(get_db, authenticate, subscription_response, cancel_subscription):
     router = APIRouter()
 
     @router.get("/subscriptions/current")
     def current(user=Depends(authenticate)):
-        doc = get_db().collection("subscriptions").document(user["uid"]).get()
-        return {"subscription": subscription_response(doc.to_dict()) if doc.exists else None}
+        doc = owned_subscription(get_db(), user["uid"])
+        data = {**doc.to_dict(), "subscription_id": doc.to_dict().get("subscription_id", doc.id)} if doc else None
+        return {"subscription": subscription_response(data) if data else None}
 
     @router.patch("/subscriptions/{subscription_id}/settings")
     def change(subscription_id: str, body: SettingsChange, user=Depends(authenticate)):
         db = get_db()
-        ref = db.collection("subscriptions").document(user["uid"])
+        if not subscription_id or "/" in subscription_id or len(subscription_id) > 1500:
+            raise HTTPException(422, "SUBSCRIPTION_ID_INVALID")
         now = datetime.now(timezone.utc)
         today = now.astimezone(KST).date()
         tomorrow = today + timedelta(days=1)
         @firestore.transactional
         def save(tx):
-            doc = ref.get(transaction=tx)
+            doc = owned_subscription(db, user["uid"], subscription_id, tx)
             owner = db.collection("users").document(user["uid"]).get(transaction=tx)
-            data = doc.to_dict() if doc.exists else {}
+            data = doc.to_dict() if doc else {}
+            data.setdefault("subscription_id", doc.id if doc else None)
             if data.get("subscription_id") != subscription_id:
                 raise HTTPException(404, "SUBSCRIPTION_NOT_FOUND")
             if deleted(data) or not owner.exists or deleted(owner.to_dict()):
@@ -142,7 +168,7 @@ def create_user_router(get_db, authenticate, subscription_response, cancel_subsc
             version = data.get("settings_version", 1) + 1
             pending = {**settings.model_dump(), "settings_version": version, "effective_date": tomorrow.isoformat()}
             data.update(settings_versions=[previous, pending], settings_version=version, updated_at=now)
-            tx.set(ref, data)
+            tx.set(doc.reference, data)
             return data
         return {"subscription": subscription_response(save(db.transaction()))}
 

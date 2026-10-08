@@ -161,6 +161,23 @@ class EngineApiTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:self.service.feedback_token(job_id,job_id)
         self.assertEqual(error.exception.status_code,410)
 
+    def test_feedback_api_selects_environment_and_rejects_unknown_values(self):
+        job_id = "b"*64
+        job = {"user_id":"fixture-user", "subscription_id":"fixture-user", "mail_kind":"daily_briefing",
+               "scheduled_date_kst":"2026-10-08", "status":"processing", "selected_article_id":"article"}
+        for name in ("engine_delivery_jobs", "engine_test_delivery_jobs"):
+            self.db.data[name+"/"+job_id] = deepcopy(job)
+        headers = {**self.headers, "Idempotency-Key":job_id}
+        # The API clock uses real UTC; pin it to the fixture day for deterministic expiry.
+        with patch("backend.engine_api.EngineService", return_value=self.service):
+            prod = self.client.post("/api/v1/engine/feedback-tokens", headers=headers, json={"job_id":job_id})
+            isolated = self.client.post("/api/v1/engine/feedback-tokens", headers=headers, json={"job_id":job_id,"environment":"test"})
+        self.assertEqual(prod.status_code,200,prod.text)
+        self.assertEqual(isolated.status_code,200,isolated.text)
+        self.assertNotEqual(prod.json()["token"],isolated.json()["token"])
+        self.assertEqual(self.client.post("/api/v1/engine/feedback-tokens", headers=headers,
+            json={"job_id":job_id,"environment":"invalid"}).status_code,422)
+
     def test_token_cannot_be_issued_without_job_or_wrong_idempotency(self):
         for key,status in (("wrong",409),("d"*64,404)):
             with self.assertRaises(HTTPException) as error:self.service.feedback_token("d"*64,key)

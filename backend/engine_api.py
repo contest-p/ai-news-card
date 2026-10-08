@@ -8,6 +8,7 @@ import hmac
 import os
 import re
 import unicodedata
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -90,7 +91,7 @@ def public_categories():
 
 
 class EngineService:
-    def __init__(self, db, *, subscriptions="subscriptions", jobs=("engine_delivery_jobs", "engine_test_delivery_jobs"),
+    def __init__(self, db, *, subscriptions="subscriptions", jobs=("engine_delivery_jobs",),
                  tokens="feedback_tokens", users="users", clock=lambda: datetime.now(timezone.utc)):
         self.db, self.clock = db, clock
         self.subscriptions = db.collection(subscriptions)
@@ -235,15 +236,19 @@ class EngineService:
                 skipped["incomplete_or_changed"] += 1
         return {"subscriptions": rows, "skipped_counts": dict(skipped)}
 
-    def feedback_token(self, job_id, idempotency_key):
+    def feedback_token(self, job_id, idempotency_key, *, environment="production"):
+        if environment not in {"production", "test"}:
+            raise HTTPException(422, "DELIVERY_ENVIRONMENT_INVALID")
         if idempotency_key != job_id:
             raise HTTPException(409, "IDEMPOTENCY_KEY_MISMATCH")
         secret = os.environ.get("FEEDBACK_TOKEN_SECRET", "")
         if len(secret) < 32:
             raise HTTPException(503, "FEEDBACK_TOKEN_SECRET_NOT_CONFIGURED")
-        refs = [self.db.collection(name).document(job_id) for name in self.jobs]
-        token_ref = self.tokens.document(job_id)
-        raw = base64.urlsafe_b64encode(hmac.digest(secret.encode(), ("feedback-v1:"+job_id).encode(), "sha256")).decode().rstrip("=")
+        names = self.jobs if environment == "production" else ("engine_test_delivery_jobs",)
+        refs = [self.db.collection(name).document(job_id) for name in names]
+        feedback_id = job_id if environment == "production" else "test-" + job_id
+        token_ref = self.tokens.document(feedback_id)
+        raw = base64.urlsafe_b64encode(hmac.digest(secret.encode(), ("feedback-v1:"+feedback_id).encode(), "sha256")).decode().rstrip("=")
         digest = hashlib.sha256(raw.encode()).hexdigest()
         @firestore.transactional
         def issue(tx):
@@ -276,6 +281,7 @@ class EngineService:
             if expiry <= now:
                 raise HTTPException(410, "FEEDBACK_TOKEN_EXPIRED")
             tx.create(token_ref, {"token_hash": digest, "job_id": job_id,
+                "feedback_id": feedback_id, "environment": environment,
                 "user_id": job["user_id"], "subscription_id": job["subscription_id"],
                 "created_at": now, "expires_at": expiry})
         issue(self.db.transaction())
@@ -283,6 +289,7 @@ class EngineService:
 
 
 class FeedbackTokenRequest(BaseModel):
+    environment: Literal["production", "test"] = "production"
     job_id: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -315,7 +322,7 @@ def create_router(get_db):
         return service().eligibility(subscription_id, now or datetime.now(timezone.utc))
     @router.post("/feedback-tokens")
     def token(body: FeedbackTokenRequest, idempotency_key: str = Header(default="")):
-        return service().feedback_token(body.job_id, idempotency_key)
+        return service().feedback_token(body.job_id, idempotency_key, environment=body.environment)
     @router.post("/privacy-cleanup")
     def cleanup(body: CleanupRequest):
         try:

@@ -60,6 +60,16 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(request.get_header("Idempotency-key"), "a" * 64)
         self.assertEqual(request.get_method(), "POST")
 
+    def test_test_gateway_requests_test_feedback_namespace(self):
+        backend = Mock()
+        wrapper = TestGateway(backend, "test-sub", "test@example.invalid")
+        wrapper.issue_feedback_token("a"*64)
+        backend.issue_feedback_token.assert_called_once_with("a"*64, environment="test")
+        self.response({"token": "opaque-fixture"})
+        self.gateway.issue_feedback_token("a"*64, environment="test")
+        request = self.opener.open.call_args.args[0]
+        self.assertEqual(json.loads(request.data)["environment"], "test")
+
     def test_redirect_and_insecure_remote_url_are_rejected(self):
         with self.assertRaises(ValueError):
             HttpEngineGateway("http://remote.example", "token")

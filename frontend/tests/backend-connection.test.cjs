@@ -318,3 +318,28 @@ test('late feedback resolution cannot restore the previous mail token data',asyn
   assert.equal(h.context.state().feedbackDraft.comment,'');
   assert.equal(h.context.state().feedbackValid,false);
 });
+
+
+test('successful subscription survives temporary refresh failure and repeated retry', async () => {
+  const h = harness(async url => url.endsWith('/subscriptions/me')
+    ? { status: 503, body: { detail: 'temporary' } } : { body: { subscription } });
+  await h.context.actions.createSubscription();
+  assert.equal(h.context.location.pathname, '/complete');
+  assert.equal(h.context.state().subscription.subscription_id, 'period-id');
+  assert.match(h.context.state().error, /구독 신청은 저장/);
+  await h.context.actions.onAction('reload-subscription');
+  assert.equal(h.context.state().subscription.subscription_id, 'period-id');
+  assert.match(h.context.state().error, /구독 신청은 저장/);
+});
+
+test('completion refresh cannot keep data after definitive errors or an account switch', async () => {
+  for (const status of [401, 404]) {
+    const h = harness(async () => ({ status, body: { detail: 'unavailable' } }));
+    await h.context.actions.refreshSubscription({ preserveOnError: true });
+    assert.equal(h.context.state().subscription, null);
+  }
+  let h;
+  h = harness(async () => { h.context.switchAccount('other-user'); return { status: 503 }; });
+  await h.context.actions.refreshSubscription({ preserveOnError: true });
+  assert.equal(h.context.state().subscription, null);
+});
