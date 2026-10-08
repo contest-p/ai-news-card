@@ -1,7 +1,7 @@
 """Wire real services; test sends are restricted to one configured subscription/address."""
 
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -9,20 +9,11 @@ import sys
 
 from dotenv import load_dotenv
 
-from engine.batch import run_batch, write_summary
-from engine.card_builder import GenerationCardBuilder
-from engine.card_images import render_with_fallback
-from engine.card_render import resolve_font_path
-from engine.chat_client import CodysseyChatClient
-from engine.firestore_article_store import FirestoreArticleRepository
 from engine.firestore_connection import create_client
-from engine.firestore_runtime_store import FirestoreGenerationStore, FirestoreJobStore, FirestoreMailArchive
 from engine.http_gateway import HttpEngineGateway
-from engine.live_collection import collect_live_sources
 from engine.mail_assembly import WebMailLinks
-from engine.pipeline import PipelineDeps
 from engine.settings import load_chat_settings
-from engine.smtp_sender import send_message
+from engine.smtp_sender import send_message, load_smtp_account
 from engine.tools.db_check import inspect_database
 from engine.tools.smtp_test import load_smtp_settings
 
@@ -66,16 +57,16 @@ def load_gateway():
     return HttpEngineGateway(os.environ.get("ENGINE_API_BASE_URL", ""), os.environ.get("ENGINE_API_TOKEN", ""))
 
 
-def preflight(project, credentials=None):
+def preflight(project, credentials=None, *, test=True):
     """Local configuration checks only; no external access or SMTP."""
     load_dotenv(ROOT / "engine" / ".env", override=False)
     missing = []
-    for label, checker in (("backend", load_gateway), ("ai", load_chat_settings), ("smtp", load_smtp_settings)):
+    for label, checker in (("backend", load_gateway), ("ai", load_chat_settings), ("smtp", load_smtp_settings if test else load_smtp_account)):
         try:
             checker()
         except (ValueError, TypeError):
             missing.append(label)
-    if not os.environ.get("ENGINE_TEST_SUBSCRIPTION_ID"):
+    if test and not os.environ.get("ENGINE_TEST_SUBSCRIPTION_ID"):
         missing.append("test_subscription_id")
     try:
         WebMailLinks(os.environ.get("ENGINE_WEB_BASE_URL", ""))
@@ -97,40 +88,11 @@ def run_test(client, *, text_only=False):
     gateway = TestGateway(load_gateway(), os.environ["ENGINE_TEST_SUBSCRIPTION_ID"], smtp.recipient)
     if not gateway.list_due_subscriptions(datetime.now(timezone.utc)):
         raise ValueError("TEST_SUBSCRIPTION_NOT_DUE")
-    repository = FirestoreArticleRepository(client)
-    jobs = FirestoreJobStore(client, collection_name="engine_test_delivery_jobs")
-    archive = FirestoreMailArchive(client,
-        retention=timedelta(days=int(os.environ["ENGINE_ARCHIVE_RETENTION_DAYS"])),
-        collection_name="engine_test_mail_archives")
-    generation = FirestoreGenerationStore(client, collection_name="engine_test_generation_jobs")
-    source_names = {}
-    builder = GenerationCardBuilder(repository=repository, observed_at=datetime.now(timezone.utc),
-        publisher_for=lambda key: source_names[key], client=CodysseyChatClient(chat),
-        model=chat.model, base_url=chat.base_url, store=generation)
+    from engine.runtime import run_connected
+    return run_connected(client, gateway=gateway, smtp=smtp, sender=test_sender(smtp),
+        text_only=text_only, test=True,
+        jobs_wrapper=lambda store: TestJobStore(store, gateway.subscription_id, smtp.recipient))
 
-    def collect(*, deadline):
-        result = collect_live_sources(max_entries=3, deadline=deadline)
-        observed_at = datetime.now(timezone.utc)
-        builder.observed_at = observed_at
-        for article in result.articles:
-            record = repository.save(article, observed_at=observed_at).record
-            source_names[record.article.article_id] = result.article_sources[article.article_id]["publisher"]
-        return result
-
-    render = (lambda data, job: ((), ["TEST_TEXT_ONLY"])) if text_only else (
-        lambda data, job: render_with_fallback(data, ROOT / ".engine-local" / "connected-test" / job.job_id,
-                                              font_path=Path(os.environ["CARD_FONT_PATH"]) if os.environ.get("CARD_FONT_PATH") else resolve_font_path()))
-    deps = PipelineDeps(gateway=gateway, jobs=jobs, archive=archive, build_cards=builder,
-                        render_images=render, send=test_sender(smtp), sender_email=smtp.sender,
-                        web_links=WebMailLinks(os.environ["ENGINE_WEB_BASE_URL"]))
-    # Keep retries belonging to another previously configured test out of this run.
-    scoped_jobs = TestJobStore(jobs, gateway.subscription_id, smtp.recipient)
-    deps.jobs = scoped_jobs
-    summary = run_batch(deps=deps, collect=collect)
-    summary["test_only"] = True
-    summary["delivery_confirmed"] = False
-    write_summary(summary, ROOT / ".engine-local" / "connected-test" / "runs")
-    return summary
 
 
 class TestJobStore:

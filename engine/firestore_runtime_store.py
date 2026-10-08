@@ -166,7 +166,7 @@ class FirestoreMailArchive:
 
     def __init__(self, client, *, retention, clock=lambda: datetime.now(timezone.utc),
                  collection_name="engine_mail_archives"):
-        if retention < timedelta(days=1):
+        if not timedelta(days=1) <= retention <= timedelta(days=30):
             raise ValueError("ARCHIVE_RETENTION_INVALID")
         self.client, self.retention, self.clock = client, retention, clock
         self.collection = client.collection(collection_name)
@@ -206,3 +206,22 @@ class FirestoreMailArchive:
             for i, chunk in enumerate(chunks):
                 tx.create(ref.collection("chunks").document(str(i)), {"payload": chunk})
         atomic(self.client, run)
+
+    def delete_expired(self, now, *, limit=100):
+        """Delete MIME children and parent together; expiry alone is not deletion."""
+        if not 1 <= limit <= 500:
+            raise ValueError("CLEANUP_LIMIT_INVALID")
+        rows = self.collection.where(filter=FieldFilter("expires_at", "<=", aware_utc(now))).limit(limit)
+        count = 0
+        for doc in rows.stream(timeout=30):
+            ref = doc.reference
+            pieces = list(ref.collection("chunks").limit(21).stream(timeout=20))
+            if len(pieces) > 20:
+                raise RuntimeError("MAIL_ARCHIVE_CHUNKS_INVALID")
+            batch = self.client.batch()
+            for piece in pieces:
+                batch.delete(piece.reference)
+            batch.delete(ref)
+            batch.commit()
+            count += 1
+        return count

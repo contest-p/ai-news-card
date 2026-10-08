@@ -41,6 +41,9 @@ class EngineGateway(Protocol):
     def issue_feedback_token(self, job_id: str) -> str:
         """메일에 한 번 넣을 원문 토큰. DB에는 해시만 저장(Backend)."""
 
+    def privacy_cleanup(self, now: datetime) -> dict:
+        """Backend-owned daily deletion/anonymous processing; failures must propagate."""
+
 
 class SampleEngineGateway:
     """저장된 가상 응답만 전달한다. 구독 날짜·권한 계산을 대신 구현하지 않는다."""

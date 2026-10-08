@@ -94,6 +94,8 @@ class FirestoreArticleRepository:
                 transaction.update(reference, {"last_seen_at": observed_at})
             return result
         document = record_document(result.record)
+        if snapshot.exists and snapshot.to_dict().get("publisher"):
+            document["publisher"] = snapshot.to_dict()["publisher"]
         if identity_reference is not None:
             transaction.create(identity_reference, {"article_id": article.article_id, "document_key": key})
             transaction.create(reference, document)
@@ -127,3 +129,41 @@ class FirestoreArticleRepository:
         document = snapshot.to_dict()
         return ArticleRevision(decode_article(document), document["content_hash"], document["content_version"],
                                aware_utc(document["captured_at"]))
+
+    def publisher_for(self, article_id):
+        identity = self.identities.document(document_key(article_id)).get(timeout=20)
+        if not identity.exists:
+            raise LookupError("SOURCE_PUBLISHER_MISSING")
+        document = self.articles.document(identity.to_dict()["document_key"]).get(timeout=20)
+        publisher = document.to_dict().get("publisher") if document.exists else None
+        if not isinstance(publisher, str) or not publisher.strip():
+            raise LookupError("SOURCE_PUBLISHER_MISSING")
+        return publisher
+
+    def set_publisher(self, record, publisher):
+        if not isinstance(publisher, str) or not 1 <= len(publisher.strip()) <= 200:
+            raise ValueError("PUBLISHER_INVALID")
+        from google.cloud import firestore
+        reference = self.articles.document(document_key(record.article.url))
+        @firestore.transactional
+        def update(tx):
+            doc = reference.get(transaction=tx)
+            if not doc.exists or doc.to_dict()["content_hash"] != record.content_hash:
+                raise RuntimeError("ARTICLE_CHANGED")
+            tx.update(reference, {"publisher": publisher.strip()})
+        update(self.client.transaction())
+
+    def recent_records(self, *, since, before, limit=500):
+        """Bounded date query for recovery; never scan the entire article collection."""
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        if not 1 <= limit <= 5000 or aware_utc(since) >= aware_utc(before):
+            raise ValueError("ARTICLE_QUERY_INVALID")
+        query = self.articles.where(filter=FieldFilter("published_at", ">=", aware_utc(since)))
+        query = query.where(filter=FieldFilter("published_at", "<", aware_utc(before)))
+        docs = list(query.limit(limit + 1).stream(timeout=30))
+        if len(docs) > limit:
+            raise RuntimeError("ARTICLE_QUERY_LIMIT_EXCEEDED")
+        return [decode_record(doc.to_dict()) for doc in docs]
+
+    def recent_articles(self, *, since, before, limit=500):
+        return [record.article for record in self.recent_records(since=since, before=before, limit=limit)]

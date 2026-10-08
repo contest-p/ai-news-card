@@ -71,3 +71,30 @@ class E5Encoder:
 
     def encode_passages(self, texts: list[str]) -> list[tuple[float, ...]]:
         return self._encode(texts, "passage: ")
+
+
+class LazyE5Encoder:
+    """Load the pinned local model only when needed; preserve card-1 fallback."""
+    model_id = MODEL_ID
+    model_revision = MODEL_REVISION
+
+    def __init__(self):
+        self._encoder = None
+        self._unavailable = False
+
+    def _load(self):
+        if self._unavailable:
+            raise RuntimeError("EMBEDDING_MODEL_UNAVAILABLE")
+        if self._encoder is None:
+            try:
+                self._encoder = E5Encoder()
+            except Exception:
+                self._unavailable = True
+                raise RuntimeError("EMBEDDING_MODEL_UNAVAILABLE") from None
+        return self._encoder
+
+    def encode_query(self, text):
+        return self._load().encode_query(text)
+
+    def encode_passages(self, texts):
+        return self._load().encode_passages(texts)

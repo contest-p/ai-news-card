@@ -1,6 +1,7 @@
 """Backend engine API adapter. Endpoint/envelope contract is a team proposal."""
 
 import json
+from datetime import timezone, timedelta
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -114,3 +115,11 @@ class HttpEngineGateway:
         if not isinstance(token, str) or not token.strip() or len(token) > 4096:
             raise GatewayUnavailable("BACKEND_FEEDBACK_TOKEN_INVALID")
         return token
+
+    def privacy_cleanup(self, now):
+        """Backend owns deletion policy; a missing endpoint is an explicit failure."""
+        result = self.request("/privacy-cleanup", body={"now": now.isoformat()},
+                              idempotency_key="privacy-" + now.astimezone(timezone(timedelta(hours=9))).date().isoformat())
+        if result.get("status") != "completed":
+            raise GatewayUnavailable("BACKEND_PRIVACY_CLEANUP_INCOMPLETE")
+        return result
