@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -52,6 +53,27 @@ class DatabaseToolsTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "CREDENTIAL_PROJECT_MISMATCH"):
                     create_client("team-project", "unused-test-credential.json")
                 constructor.assert_not_called()
+
+    def test_actions_inline_json_uses_matching_project_without_key_file(self):
+        credentials = SimpleNamespace(project_id="team-project")
+        with patch.dict(os.environ, {"FIREBASE_SERVICE_ACCOUNT_JSON":'{"type":"service_account"}'}, clear=True), \
+             patch("google.oauth2.service_account.Credentials.from_service_account_info", return_value=credentials) as loader, \
+             patch("google.cloud.firestore.Client") as client, patch("dotenv.load_dotenv"):
+            create_client("team-project")
+            loader.assert_called_once_with({"type":"service_account"})
+            client.assert_called_once_with(project="team-project",credentials=credentials)
+            with self.assertRaisesRegex(ValueError,"CREDENTIAL_PROJECT_MISMATCH"):
+                create_client("wrong-project")
+            self.assertEqual(client.call_count,1)
+
+    def test_invalid_actions_credential_does_not_leak_secret_or_use_adc(self):
+        for value in ('PRIVATE_INVALID_JSON', '{}'):
+            with patch.dict(os.environ, {"FIREBASE_SERVICE_ACCOUNT_JSON":value}, clear=True), \
+                 patch("google.oauth2.service_account.Credentials.from_service_account_info", side_effect=ValueError("PRIVATE_KEY")), \
+                 patch("google.cloud.firestore.Client") as client, patch("dotenv.load_dotenv"):
+                with self.assertRaisesRegex(ValueError,"^CREDENTIAL_JSON_INVALID$"):
+                    create_client("team-project")
+                client.assert_not_called()
 
     def test_collection_replay_is_idempotent_and_failure_propagates(self):
         result = collect_local_samples(Path(__file__).resolve().parents[1] / "samples" / "collection")

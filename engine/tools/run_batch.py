@@ -9,6 +9,12 @@ from engine.runtime import run_connected
 from engine.tools.connected_batch import preflight
 
 
+def log_summary(result):
+    """Only aggregate counts reach public Actions logs; detailed results stay local."""
+    return {key: value for key, value in result.items() if key not in {"jobs", "run_id"}} | {
+        "jobs": {key: value for key, value in result.get("jobs", {}).items() if key != "results"}}
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
@@ -19,6 +25,7 @@ def main():
     group.add_argument("--check", action="store_true", help="외부 호출 없이 설정만 확인")
     group.add_argument("--run", action="store_true", help="전체 대상 기사·AI·DB·SMTP 배치 실행")
     parser.add_argument("--text-only", action="store_true")
+    parser.add_argument("--safe-log", action="store_true", help="작업별 식별자·상세 결과 없이 집계만 출력")
     args = parser.parse_args()
     client = None
     try:
@@ -28,7 +35,7 @@ def main():
             return 1 if report["missing_configuration"] else 0
         client = create_client(args.project, args.credentials)
         result = run_connected(client, text_only=args.text_only)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(log_summary(result) if args.safe_log else result, ensure_ascii=False, indent=2))
         bad = {"failed", "unknown", "crashed", "claim_lost"}
         return int(bool(result["errors"]) or any(result["jobs"]["by_status"].get(s, 0) for s in bad))
     except Exception as error:

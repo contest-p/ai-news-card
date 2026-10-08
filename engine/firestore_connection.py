@@ -1,5 +1,6 @@
 """Engine server connection; never imports Backend or exposes credentials."""
 
+import json
 import os
 from pathlib import Path
 
@@ -18,6 +19,15 @@ def create_client(project: str, credential_path: str | None = None):
         if not resolved.is_file():
             raise ValueError("CREDENTIAL_FILE_NOT_FOUND")
         credentials = service_account.Credentials.from_service_account_file(str(resolved))
+        if credentials.project_id != project:
+            raise ValueError("CREDENTIAL_PROJECT_MISMATCH")
+        return firestore.Client(project=project, credentials=credentials)
+    raw = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+    if raw:
+        try:
+            credentials = service_account.Credentials.from_service_account_info(json.loads(raw))
+        except (ValueError, TypeError, KeyError):
+            raise ValueError("CREDENTIAL_JSON_INVALID") from None
         if credentials.project_id != project:
             raise ValueError("CREDENTIAL_PROJECT_MISMATCH")
         return firestore.Client(project=project, credentials=credentials)

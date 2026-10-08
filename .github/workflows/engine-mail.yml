@@ -1,0 +1,107 @@
+name: 뉴스 메일 예약 발송
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check는 DB·AI·SMTP 호출 없음, run은 전체 대상 실제 발송'
+        required: true
+        type: choice
+        default: check
+        options: [check, run]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-mail-production
+  cancel-in-progress: false
+
+jobs:
+  mail:
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      (github.event_name == 'workflow_dispatch' || vars.ENGINE_SCHEDULE_ENABLED == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    environment: engine-production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: engine/dependencies/requirements*.txt
+      - name: Python 의존성 설치
+        run: python -m pip install -r engine/dependencies/requirements-rag.txt
+      - name: 설정 확인
+        env:
+          ENGINE_FIREBASE_PROJECT: ${{ vars.ENGINE_FIREBASE_PROJECT || 'ai-news-card' }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          ENGINE_API_BASE_URL: ${{ vars.ENGINE_API_BASE_URL }}
+          ENGINE_API_TOKEN: ${{ secrets.ENGINE_API_TOKEN }}
+          ENGINE_WEB_BASE_URL: ${{ vars.ENGINE_WEB_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.5' }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_SECURITY: ${{ vars.SMTP_SECURITY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          ENGINE_ARCHIVE_RETENTION_DAYS: ${{ vars.ENGINE_ARCHIVE_RETENTION_DAYS }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT_JSON is required"
+            exit 1
+          fi
+          python -B -m engine.tools.run_batch --check --project "$ENGINE_FIREBASE_PROJECT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: github.event_name == 'schedule' || inputs.mode == 'run'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: engine/package-lock.json
+      - name: 이미지 렌더러와 한글 폰트 준비
+        if: github.event_name == 'schedule' || inputs.mode == 'run'
+        run: |
+          npm ci --prefix engine
+          cd engine
+          npx --no-install playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y fonts-nanum
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: github.event_name == 'schedule' || inputs.mode == 'run'
+        with:
+          path: .venv/model-cache
+          key: e5-small-ubuntu-24.04-614241f622f53c4eeff9890bdc4f31cfecc418b3-${{ hashFiles('engine/dependencies/requirements-rag*.txt') }}
+      - name: 고정 E5 모델 준비
+        if: github.event_name == 'schedule' || inputs.mode == 'run'
+        run: python -c "from engine.embeddings import E5Encoder; E5Encoder(allow_download=True); print('Embedding model ready')"
+      - name: 운영 배치 실행
+        if: github.event_name == 'schedule' || inputs.mode == 'run'
+        env:
+          ENGINE_FIREBASE_PROJECT: ${{ vars.ENGINE_FIREBASE_PROJECT || 'ai-news-card' }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          ENGINE_API_BASE_URL: ${{ vars.ENGINE_API_BASE_URL }}
+          ENGINE_API_TOKEN: ${{ secrets.ENGINE_API_TOKEN }}
+          ENGINE_WEB_BASE_URL: ${{ vars.ENGINE_WEB_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.5' }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_SECURITY: ${{ vars.SMTP_SECURITY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          ENGINE_ARCHIVE_RETENTION_DAYS: ${{ vars.ENGINE_ARCHIVE_RETENTION_DAYS }}
+          ENGINE_MAX_CARD_JOBS_PER_BATCH: ${{ vars.ENGINE_MAX_CARD_JOBS_PER_BATCH || '10' }}
+          CARD_FONT_PATH: /usr/share/fonts/truetype/nanum/NanumGothic.ttf
+          TOKENIZERS_PARALLELISM: 'false'
+        run: python -B -m engine.tools.run_batch --run --safe-log --project "$ENGINE_FIREBASE_PROJECT"

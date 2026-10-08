@@ -54,7 +54,10 @@ def test_sender(settings):
 
 
 def load_gateway():
-    return HttpEngineGateway(os.environ.get("ENGINE_API_BASE_URL", ""), os.environ.get("ENGINE_API_TOKEN", ""))
+    token = os.environ.get("ENGINE_API_TOKEN", "")
+    if len(token) < 32:
+        raise ValueError("ENGINE_API_TOKEN_REQUIRED")
+    return HttpEngineGateway(os.environ.get("ENGINE_API_BASE_URL", ""), token)
 
 
 def preflight(project, credentials=None, *, test=True):

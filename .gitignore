@@ -28,3 +28,5 @@ build/
 # OS / editor
 .DS_Store
 .vscode/
+# Generated mail, card previews, run records and local verification tools
+.engine-local/
