@@ -1,0 +1,33 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "engine_articles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "embedding_status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "first_seen_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "engine_articles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "embedding_status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "embedding_updated_at",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

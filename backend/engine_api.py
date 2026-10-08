@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import os
 import re
+import unicodedata
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -35,9 +36,10 @@ class SubscriptionSettings(BaseModel):
     @field_validator("keywords")
     @classmethod
     def valid_keywords(cls, values):
-        if any(v != v.strip() or not 1 <= len(v) <= 20 for v in values):
+        values = [unicodedata.normalize("NFKC", v).strip() for v in values]
+        if any(not 1 <= len(v) <= 20 for v in values):
             raise ValueError("KEYWORDS_INVALID")
-        return values
+        return list(dict.fromkeys(values))
 
     @field_validator("duration_days")
     @classmethod
@@ -69,6 +71,24 @@ def deleted(data):
     return bool(data.get("deletion_requested_at") or data.get("deletion_requested") or data.get("deleted_at"))
 
 
+def account_fence(db, uid, transaction=None):
+    if not isinstance(uid, str) or not uid or "/" in uid:
+        raise HTTPException(401, "AUTH_REQUIRED")
+    marker = db.collection("privacy_deletions").document(hashlib.sha256(uid.encode()).hexdigest())
+    if marker.get(transaction=transaction).exists:
+        raise HTTPException(410, "ACCOUNT_DELETED")
+
+
+def effective_settings(data, day):
+    base = {"settings_version": 1, "effective_date": data.get("start_date"), **data}
+    versions = [v for v in data.get("settings_versions", []) if v["effective_date"] <= day.isoformat()]
+    return {**base, **max(versions, key=lambda v: (v["effective_date"], v["settings_version"]))} if versions else base
+
+
+def public_categories():
+    return [v for v in sorted(CATEGORIES) if v in os.getenv("PUBLIC_CATEGORIES", "").split(",")]
+
+
 class EngineService:
     def __init__(self, db, *, subscriptions="subscriptions", jobs=("engine_delivery_jobs", "engine_test_delivery_jobs"),
                  tokens="feedback_tokens", users="users", clock=lambda: datetime.now(timezone.utc)):
@@ -86,6 +106,12 @@ class EngineService:
                 raise HTTPException(404, "SUBSCRIPTION_REPLACED")
         else:
             matches = list(self.subscriptions.where(filter=FieldFilter("subscription_id", "==", subscription_id)).limit(2).stream(timeout=20))
+            if len(matches) > 1:
+                raise HTTPException(409, "SUBSCRIPTION_NOT_UNIQUE")
+            if not matches and self.subscriptions.id == "subscriptions":
+                archived = self.db.collection("subscription_history").document(subscription_id).get(timeout=20)
+                if archived.exists:
+                    matches = [archived]
             if len(matches) != 1:
                 raise HTTPException(404, "SUBSCRIPTION_NOT_FOUND")
             doc, ref = matches[0], matches[0].reference
@@ -125,7 +151,8 @@ class EngineService:
     def snapshot(self, subscription_id, day, *, kind="daily_briefing"):
         ref, data = self.read(subscription_id)
         try:
-            settings = SubscriptionSettings.model_validate(data)
+            applied = effective_settings(data, day)
+            settings = SubscriptionSettings.model_validate(applied)
             start, end = dates(data)
             if settings.duration_days != (end-start).days or self.deletion_requested(data):
                 raise ValueError()
@@ -143,12 +170,16 @@ class EngineService:
         candidate = {"subscription_id": subscription_id, "user_id": data["uid"], "recipient_email": email,
                      "timezone": "Asia/Seoul", "status": "active" if kind == "daily_briefing" else "expired",
                      "categories": settings.categories, "keywords": settings.keywords,
+                     "contract_version": "1.0", "settings_version": applied.get("settings_version", 1),
+                     "effective_date": applied.get("effective_date", data["start_date"]),
+                     "delivery_hour_kst": settings.delivery_hour_kst,
                      "start_date": start.isoformat(), "end_date_exclusive": end.isoformat(),
                      "scheduled_date_kst": day.isoformat(), "scheduled_at": scheduled.isoformat(),
                      "deadline_at": deadline.isoformat()}
         # Freeze the day's settings once they are requested; no SMTP/AI inside callback.
         identity = hashlib.sha256(subscription_id.encode()).hexdigest()[:24]
-        snapshot_ref = ref.collection("engine_snapshots").document(identity+"-"+day.isoformat()+"-"+kind)
+        snapshot_parent = self.subscriptions.document(data["snapshot_parent_id"]) if data.get("snapshot_parent_id") else ref
+        snapshot_ref = snapshot_parent.collection("engine_snapshots").document(identity+"-"+day.isoformat()+"-"+kind)
         @firestore.transactional
         def freeze(tx):
             current = ref.get(transaction=tx)
@@ -171,6 +202,11 @@ class EngineService:
             "==" if subscription_id else "in",
             subscription_id if subscription_id else ["active", "expired"]))
         docs = list(query.limit(1001).stream(timeout=20))
+        if expired and self.subscriptions.id == "subscriptions":
+            history = self.db.collection("subscription_history").where(filter=FieldFilter(
+                "subscription_id" if subscription_id else "status", "==" if subscription_id else "in",
+                subscription_id if subscription_id else ["active", "expired"]))
+            docs += list(history.limit(1001).stream(timeout=20))
         if len(docs) > 1000:
             raise HTTPException(503, "SUBSCRIPTION_QUERY_LIMIT_EXCEEDED")
         rows, skipped = [], Counter()
@@ -184,7 +220,7 @@ class EngineService:
                     day, kind = end, "subscription_end"
                 else:
                     day, kind = now.astimezone(KST).date(), "daily_briefing"
-                    hour = data["delivery_hour_kst"]
+                    hour = effective_settings(data, day)["delivery_hour_kst"]
                     if type(hour) is not int or not 0 <= hour <= 23:
                         raise ValueError()
                     scheduled = instant(day, hour)
@@ -233,15 +269,25 @@ class EngineService:
                 if not hmac.compare_digest(previous["token_hash"], digest):
                     raise HTTPException(409, "FEEDBACK_SECRET_CHANGED")
                 return
+            try:
+                expiry = instant(date.fromisoformat(job["scheduled_date_kst"]) + timedelta(days=30))
+            except (KeyError, ValueError, TypeError):
+                raise HTTPException(409, "DELIVERY_JOB_DATE_INVALID") from None
+            if expiry <= now:
+                raise HTTPException(410, "FEEDBACK_TOKEN_EXPIRED")
             tx.create(token_ref, {"token_hash": digest, "job_id": job_id,
                 "user_id": job["user_id"], "subscription_id": job["subscription_id"],
-                "created_at": now, "expires_at": now+timedelta(days=30)})
+                "created_at": now, "expires_at": expiry})
         issue(self.db.transaction())
         return {"token": raw}
 
 
 class FeedbackTokenRequest(BaseModel):
     job_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class CleanupRequest(BaseModel):
+    now: datetime
 
 
 def create_router(get_db):
@@ -270,4 +316,19 @@ def create_router(get_db):
     @router.post("/feedback-tokens")
     def token(body: FeedbackTokenRequest, idempotency_key: str = Header(default="")):
         return service().feedback_token(body.job_id, idempotency_key)
+    @router.post("/privacy-cleanup")
+    def cleanup(body: CleanupRequest):
+        try:
+            from .privacy import PrivacyService
+        except ImportError:
+            from privacy import PrivacyService
+        now = utc(body.now)
+        if abs((now - datetime.now(timezone.utc)).total_seconds()) > 3600:
+            raise HTTPException(422, "CLEANUP_TIME_INVALID")
+        try:
+            return PrivacyService(get_db()).cleanup(now)
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(503, "PRIVACY_CLEANUP_FAILED_RETRY_REQUIRED") from None
     return router

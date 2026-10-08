@@ -2,15 +2,18 @@
 import os
 import json
 import hashlib
+import hmac
 from uuid import uuid4
 from datetime import datetime, timezone, timedelta, date
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, field_validator, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, field_validator, ValidationError
 
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
@@ -19,9 +22,9 @@ from pathlib import Path
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 try:
-    from .engine_api import SubscriptionSettings, create_router, instant
+    from .engine_api import SubscriptionSettings, create_router, instant, deleted, effective_settings, public_categories, account_fence
 except ImportError:
-    from engine_api import SubscriptionSettings, create_router, instant
+    from engine_api import SubscriptionSettings, create_router, instant, deleted, effective_settings, public_categories, account_fence
 
 # --------------------------------------------------
 # 환경변수 로드
@@ -164,17 +167,19 @@ def get_current_user(
     token = credentials.credentials
 
     try:
-        decoded_token = auth.verify_id_token(token)
+        decoded_token = auth.verify_id_token(token, check_revoked=True)
 
+        account_fence(db, decoded_token.get("uid"))
         return {
             "uid": decoded_token.get("uid"),
             "email": decoded_token.get("email"),
-            "name": decoded_token.get("name")
-            or decoded_token.get("email", "").split("@")[0],
+
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"토큰 검증 실패: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="AUTH_REQUIRED")
 
 
 def get_engine_auth(
@@ -187,7 +192,7 @@ def get_engine_auth(
 
     engine_token = os.getenv("ENGINE_API_TOKEN")
 
-    if not engine_token:
+    if not engine_token or len(engine_token) < 32:
         raise HTTPException(
             status_code=500,
             detail="서버에 ENGINE_API_TOKEN 환경변수가 설정되어 있지 않습니다.",
@@ -199,7 +204,7 @@ def get_engine_auth(
     if credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Bearer 토큰 형식이 아닙니다.")
 
-    if credentials.credentials != engine_token:
+    if not hmac.compare_digest(credentials.credentials.encode(), engine_token.encode()):
         raise HTTPException(status_code=401, detail="엔진 인증 토큰이 올바르지 않습니다.")
 
     return True
@@ -210,10 +215,11 @@ def get_engine_auth(
 # 중요: 모델은 라우터 함수보다 위에 있어야 함
 # --------------------------------------------------
 class SubscriptionSaveRequest(BaseModel):
-    plan: str = "basic"
+    model_config = ConfigDict(extra="forbid")
+    plan: Literal["basic"] = "basic"
     engine_settings: Optional[SubscriptionSettings] = None
     category: Optional[str] = None
-    keywords: List[str] = Field(default_factory=list)
+    keywords: List[str] = Field(default_factory=list, max_length=5)
     send_time: Optional[str] = None
     duration_weeks: Optional[int] = None
     agreed_privacy: Optional[bool] = None
@@ -239,8 +245,7 @@ class SubscriptionSaveRequest(BaseModel):
     @field_validator("keywords")
     @classmethod
     def validate_keywords(cls, v):
-        cleaned = [k.strip() for k in v if k.strip()]
-        return cleaned
+        return SubscriptionSettings.valid_keywords(v)
 
 
 class FeedbackCreate(BaseModel):
@@ -340,10 +345,10 @@ app.include_router(create_router(lambda: db))
 @app.get("/catalog")
 def catalog():
     return {
-        "categories": ["economy", "it_science", "politics", "society", "world", "culture"],
+        "categories": public_categories(),
         "durations": [7, 14, 28],
         "consent_version": os.getenv("CONSENT_VERSION", "v1"),
-        "capabilities": {"settings_change": False, "feedback": False},
+        "capabilities": {"settings_change": True, "feedback": True, "account_deletion": True},
     }
 
 
@@ -363,24 +368,19 @@ def sync_user(current_user: dict = Depends(get_current_user)):
     uid = current_user["uid"]
 
     user_ref = db.collection("users").document(uid)
-    existing_doc = user_ref.get()
-
     now = datetime.now(timezone.utc)
-
-    user_data = {
-        "uid": uid,
-        "email": current_user.get("email"),
-        "name": current_user.get("name"),
-        "updated_at": now,
-    }
-
-    if existing_doc.exists:
-        old_data = existing_doc.to_dict()
-        user_data["created_at"] = old_data.get("created_at", now)
-    else:
-        user_data["created_at"] = now
-
-    user_ref.set(user_data, merge=True)
+    @firestore.transactional
+    def sync(tx):
+        existing_doc = user_ref.get(transaction=tx)
+        account_fence(db, uid, tx)
+        old = existing_doc.to_dict() if existing_doc.exists else {}
+        if deleted(old):
+            raise HTTPException(410, "ACCOUNT_DELETION_PENDING")
+        user_data = {"uid": uid, "email": current_user.get("email"), "updated_at": now,
+                     "created_at": old.get("created_at", now)}
+        tx.set(user_ref, user_data)
+        return user_data
+    user_data = sync(db.transaction())
 
     return {
         "message": "사용자 정보가 Firestore에 저장되었습니다.",
@@ -414,7 +414,11 @@ def save_subscription(
                 consent_version=os.getenv("CONSENT_VERSION", "v1"))
         except ValidationError:
             raise HTTPException(422, "구독 설정이 올바르지 않습니다.") from None
-    if settings and settings.consent_version != os.getenv("CONSENT_VERSION", "v1"):
+    if settings is None:
+        raise HTTPException(422, "SUBSCRIPTION_SETTINGS_REQUIRED")
+    if any(v not in public_categories() for v in settings.categories):
+        raise HTTPException(422, "CATEGORY_NOT_PUBLIC")
+    if settings.consent_version != os.getenv("CONSENT_VERSION", "v1"):
         raise HTTPException(409, "개인정보 안내가 변경되었습니다. 다시 동의해주세요.")
     if not email:
         raise HTTPException(400, "인증 계정의 이메일이 필요합니다.")
@@ -426,6 +430,12 @@ def save_subscription(
     def save(transaction):
         doc = ref.get(transaction=transaction)
         previous = doc.to_dict() if doc.exists else {}
+        owner = db.collection("users").document(uid).get(transaction=transaction)
+        account_fence(db, uid, transaction)
+        if previous.get("status") == "privacy_cleaning":
+            raise HTTPException(409, "PRIVACY_CLEANUP_IN_PROGRESS")
+        if owner.exists and deleted(owner.to_dict()):
+            raise HTTPException(410, "ACCOUNT_DELETION_PENDING")
         if idempotency_key and previous.get("request_key") == idempotency_key:
             if previous.get("request_fingerprint") != fingerprint:
                 raise HTTPException(409, "동일한 요청 키에 다른 구독 설정이 사용되었습니다.")
@@ -443,18 +453,31 @@ def save_subscription(
         data = {"uid": uid, "email": email, "plan": request.plan, "status": "active",
                 "subscription_id": str(uuid4()), "created_at": now, "updated_at": now,
                 "cancelled_at": None, "canceled_at": None,
+                "consent_at": now, "settings_version": 1,
                 "request_key": idempotency_key, "request_fingerprint": fingerprint}
         if settings:
-            start = datetime.now(KST).date() + timedelta(days=1)
+            start = now.astimezone(KST).date() + timedelta(days=1)
             end = start + timedelta(days=settings.duration_days)
             data.update(settings.model_dump())
             data.update(start_date=start.isoformat(), first_delivery_date=start.isoformat(),
-                        end_date_exclusive=end.isoformat(), expires_at=instant(end, 0),
+                        end_date_exclusive=end.isoformat(), expires_at=instant(end, 0), cleanup_after=instant(end, 0) + timedelta(days=29),
                         end_date=(end - timedelta(days=1)).isoformat(),
                         category=settings.categories[0],
                         send_time=f"{settings.delivery_hour_kst:02d}:00",
                         duration_weeks=settings.duration_days // 7, agreed_privacy=True)
+        data["effective_date"] = data["start_date"]
+        data["settings_versions"] = [{**settings.model_dump(), "settings_version": 1,
+                                      "effective_date": data["start_date"]}]
+        # Retain previous identity independently, so a new subscription cannot erase its retention deadline.
+        if previous.get("subscription_id"):
+            previous["snapshot_parent_id"] = uid
+            if "cleanup_after" not in previous:
+                ended = previous.get("cancelled_at") or previous.get("expires_at") or now
+                previous["cleanup_after"] = ended + timedelta(days=29)
+            transaction.set(db.collection("subscription_history").document(previous["subscription_id"]), previous)
         transaction.set(ref, data)
+        if not owner.exists:
+            transaction.set(db.collection("users").document(uid), {"uid": uid, "email": email, "created_at": now})
         return data
 
     subscription_data = save(db.transaction())
@@ -487,6 +510,19 @@ def subscription_response(data):
         result["categories"] = [result["category"]]
     if "delivery_hour_kst" not in result and result.get("send_time"):
         result["delivery_hour_kst"] = int(result["send_time"].split(":")[0])
+    today = datetime.now(KST).date()
+    applied = effective_settings(data, today)
+    for key in ("categories", "keywords", "delivery_hour_kst"):
+        if key in applied:
+            result[key] = applied[key]
+    if applied.get("categories"):
+        result["category"] = applied["categories"][0]
+    if "delivery_hour_kst" in applied:
+        result["send_time"] = f'{applied["delivery_hour_kst"]:02d}:00'
+    result["current_settings"] = {k: applied.get(k) for k in ("categories", "keywords", "delivery_hour_kst", "settings_version", "effective_date")}
+    pending = [v for v in data.get("settings_versions", []) if v["effective_date"] > today.isoformat()]
+    result["next_settings"] = max(pending, key=lambda v: v["settings_version"]) if pending else None
+    result.pop("settings_versions", None)
     return serialize_dict(result)
 
 
@@ -519,16 +555,26 @@ def get_my_subscription(current_user: dict = Depends(get_current_user)):
 # --------------------------------------------------
 # 구독 해제
 # --------------------------------------------------
+class CancelRequest(BaseModel):
+    subscription_id: str = Field(min_length=1, max_length=1500, pattern=r"^[^/]+$")
+    confirm: bool = Field(strict=True)
+
+
 @app.patch("/subscriptions/cancel")
-def cancel_subscription(current_user: dict = Depends(get_current_user)):
+def cancel_subscription(request: CancelRequest, current_user: dict = Depends(get_current_user)):
+    if request.confirm is not True:
+        raise HTTPException(422, "CONFIRM_REQUIRED")
     @firestore.transactional
     def cancel(transaction):
         doc = find_subscription(current_user["uid"], transaction)
         data = doc.to_dict()
         data.setdefault("subscription_id", doc.id)
+        if data["subscription_id"] != request.subscription_id:
+            raise HTTPException(404, "SUBSCRIPTION_NOT_FOUND")
         if subscription_status(data) == "active":
             now = datetime.now(timezone.utc)
-            data.update(status="cancelled", cancelled_at=now, canceled_at=now, updated_at=now)
+            data.update(status="cancelled", cancelled_at=now, canceled_at=now, updated_at=now,
+                        cleanup_after=min(data.get("cleanup_after", now + timedelta(days=29)), now + timedelta(days=29)))
             transaction.set(doc.reference, data)
         return data
     data = cancel(db.transaction())
@@ -543,47 +589,8 @@ def cancel_subscription(current_user: dict = Depends(get_current_user)):
 # 피드백 저장
 # --------------------------------------------------
 @app.post("/feedback/save")
-def save_feedback(
-    feedback: FeedbackCreate,
-    current_user: dict = Depends(get_current_user),
-):
-    uid = current_user["uid"]
-    email = current_user.get("email")
-
-    # 구독 문서가 실제로 존재하고, 본인 구독인지 확인
-    subscription_ref = db.collection("subscriptions").document(feedback.subscription_id)
-    subscription_doc = subscription_ref.get()
-
-    if not subscription_doc.exists:
-        raise HTTPException(status_code=404, detail="구독 정보를 찾을 수 없습니다.")
-
-    subscription_data = subscription_doc.to_dict()
-
-    if subscription_data.get("uid") != uid:
-        raise HTTPException(
-            status_code=403,
-            detail="본인의 구독에만 피드백을 남길 수 있습니다.",
-        )
-
-    now = datetime.now(timezone.utc)
-
-    feedback_data = {
-        "uid": uid,
-        "email": email,
-        "subscription_id": feedback.subscription_id,
-        "rating": feedback.rating,
-        "comment": feedback.comment,
-        "created_at": now,
-    }
-
-    doc_ref = db.collection("feedbacks").document()
-    doc_ref.set(feedback_data)
-
-    return {
-        "message": "피드백이 저장되었습니다.",
-        "feedback_id": doc_ref.id,
-        "feedback": serialize_dict(feedback_data),
-    }
+def save_feedback(current_user: dict = Depends(get_current_user)):
+    raise HTTPException(410, "USE_TOKEN_FEEDBACK_API")
 
 
 # --------------------------------------------------
@@ -593,7 +600,7 @@ def save_feedback(
 def get_my_feedback(current_user: dict = Depends(get_current_user)):
     uid = current_user["uid"]
 
-    feedbacks_ref = db.collection("feedbacks").where("uid", "==", uid).stream()
+    feedbacks_ref = db.collection("feedbacks").where(filter=FieldFilter("user_id", "==", uid)).limit(100).stream()
 
     result = []
 
@@ -625,105 +632,51 @@ def engine_health(_: bool = Depends(get_engine_auth)):
 # send_time을 넘기면 해당 발송 시간 구독만 조회
 # --------------------------------------------------
 @app.get("/engine/subscriptions/active")
-def get_active_subscriptions_for_engine(
-    target_date: Optional[str] = None,
-    send_time: Optional[str] = None,
-    _: bool = Depends(get_engine_auth),
-):
-    target_date = normalize_target_date(target_date)
-
-    docs = db.collection("subscriptions").where("status", "==", "active").stream()
-
-    result = []
-
-    for doc in docs:
-        data = doc.to_dict()
-
-        if not is_sendable_subscription(data, target_date):
-            continue
-
-        if send_time and data.get("send_time") != send_time:
-            continue
-
-        data["id"] = doc.id
-        result.append(serialize_dict(data))
-
-    return {
-        "target_date": target_date,
-        "send_time": send_time,
-        "count": len(result),
-        "subscriptions": result,
-    }
-
-
-# --------------------------------------------------
-# 엔진용 만료 대상 구독 조회
-# target_date 기준 end_date가 지난 active 구독 조회
-# --------------------------------------------------
 @app.get("/engine/subscriptions/expired")
-def get_expired_subscriptions_for_engine(
-    target_date: Optional[str] = None,
-    _: bool = Depends(get_engine_auth),
-):
-    target_date = normalize_target_date(target_date)
-
-    docs = db.collection("subscriptions").where("status", "==", "active").stream()
-
-    result = []
-
-    for doc in docs:
-        data = doc.to_dict()
-
-        if not is_expired_subscription(data, target_date):
-            continue
-
-        data["id"] = doc.id
-        result.append(serialize_dict(data))
-
-    return {
-        "target_date": target_date,
-        "count": len(result),
-        "subscriptions": result,
-    }
-
-
-# --------------------------------------------------
-# 엔진용 만료 처리
-# target_date 기준 만료된 active 구독을 expired로 변경
-# --------------------------------------------------
 @app.patch("/engine/subscriptions/expire")
-def expire_subscriptions_for_engine(
-    target_date: Optional[str] = None,
-    _: bool = Depends(get_engine_auth),
-):
-    target_date = normalize_target_date(target_date)
+def legacy_engine_routes(_: bool = Depends(get_engine_auth)):
+    raise HTTPException(410, "USE_V1_ENGINE_API")
 
-    docs = db.collection("subscriptions").where("status", "==", "active").stream()
 
-    expired_items = []
-    now_kst = datetime.now(KST).isoformat()
+try:
+    from .user_api import create_user_router
+except ImportError:
+    from user_api import create_user_router
+user_router = create_user_router(lambda: db, get_current_user, subscription_response, cancel_subscription)
+app.include_router(user_router)
+app.include_router(user_router, prefix="/api/v1")
 
-    for doc in docs:
-        data = doc.to_dict()
 
-        if not is_expired_subscription(data, target_date):
-            continue
+@app.exception_handler(RequestValidationError)
+async def invalid_input(request, exc):
+    return JSONResponse(status_code=422, content={"detail": "INVALID_INPUT",
+        "error": {"code": "INVALID_INPUT", "message": "입력 값을 확인해주세요."}}, headers={"Cache-Control": "no-store"})
 
-        update_data = {
-            "status": "expired",
-            "expired_at": now_kst,
-            "updated_at": now_kst,
-        }
 
-        doc.reference.update(update_data)
+@app.exception_handler(HTTPException)
+async def api_error(request, exc):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail,
+        "error": {"code": str(exc.detail), "message": str(exc.detail)}},
+        headers={**(exc.headers or {}), "Cache-Control": "no-store"})
 
-        data.update(update_data)
-        data["id"] = doc.id
-        expired_items.append(serialize_dict(data))
 
-    return {
-        "message": "만료 구독 처리가 완료되었습니다.",
-        "target_date": target_date,
-        "count": len(expired_items),
-        "subscriptions": expired_items,
-    }
+@app.post("/subscriptions")
+def create_subscription(settings: SubscriptionSettings, current_user: dict = Depends(get_current_user),
+                        idempotency_key: Optional[str] = Header(None, max_length=200)):
+    return save_subscription(SubscriptionSaveRequest(engine_settings=settings), current_user, idempotency_key)
+
+
+# Versioned common-PRD routes plus the existing browser paths during frontend migration.
+from fastapi import APIRouter
+from fastapi.routing import APIRoute
+browser_routes = [r for r in app.routes if isinstance(r, APIRoute) and
+                  r.path.startswith(("/catalog", "/me", "/users/", "/subscriptions", "/feedback", "/account-deletion-requests"))]
+app.include_router(APIRouter(routes=browser_routes), prefix="/api/v1")
+
+
+@app.middleware("http")
+async def private_response_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response

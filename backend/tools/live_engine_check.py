@@ -29,7 +29,7 @@ def main():
                 "consent_version":"test-only","start_date":day.isoformat(),
                 "end_date_exclusive":(day+timedelta(days=7)).isoformat()})
             tx.create(job, {"job_id":job_id,"user_id":identity,"subscription_id":identity,
-                "mail_kind":"daily_briefing","status":"processing","selected_article_id":"probe-only"})
+                "mail_kind":"daily_briefing","scheduled_date_kst":day.isoformat(),"status":"processing","selected_article_id":"probe-only"})
         seed(db.transaction())
         seeded = True
         service = EngineService(db, subscriptions="engine_test_subscriptions", users="engine_test_users",

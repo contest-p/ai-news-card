@@ -1,5 +1,6 @@
 """Browser API flow and ownership checks with an isolated in-memory DB."""
 import importlib
+import os
 from datetime import date, datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
@@ -11,6 +12,8 @@ from backend.engine_api import KST, EngineService, instant
 
 class FrontendApiTests(unittest.TestCase):
     def setUp(self):
+        self.env = patch.dict(os.environ, {"PUBLIC_CATEGORIES":"economy,it_science,politics,society,world,culture"})
+        self.env.start(); self.addCleanup(self.env.stop)
         self.db = DB()
         with patch("firebase_admin._apps", {"test": object()}), patch("firebase_admin.firestore.client", return_value=self.db):
             self.main = importlib.import_module("backend.main")
@@ -18,7 +21,7 @@ class FrontendApiTests(unittest.TestCase):
         self.main.app.dependency_overrides.clear()
         self.client = TestClient(self.main.app)
         self.addCleanup(self.main.app.dependency_overrides.clear)
-        self.verify = patch("backend.main.auth.verify_id_token", side_effect=lambda token: {
+        self.verify = patch("backend.main.auth.verify_id_token", side_effect=lambda token, **kwargs: {
             "uid": token, "email": token + "@example.invalid", "name": "테스트 사용자"})
         self.verify.start()
         self.addCleanup(self.verify.stop)
@@ -34,7 +37,7 @@ class FrontendApiTests(unittest.TestCase):
         catalog = self.client.get("/catalog")
         self.assertEqual(catalog.status_code, 200)
         self.assertEqual(len(catalog.json()["categories"]), 6)
-        self.assertFalse(catalog.json()["capabilities"]["settings_change"])
+        self.assertTrue(catalog.json()["capabilities"]["settings_change"])
         self.assertEqual(self.client.get("/subscriptions/me").status_code, 401)
         self.assertEqual(self.client.get("/subscriptions/me", headers=self.headers).status_code, 404)
 
@@ -56,8 +59,8 @@ class FrontendApiTests(unittest.TestCase):
         self.assertEqual(due["subscriptions"][0]["recipient_email"], "test-user@example.invalid")
         other = {"Authorization": "Bearer other-user"}
         self.assertEqual(self.client.get("/subscriptions/me", headers=other).status_code, 404)
-        self.assertEqual(self.client.patch("/subscriptions/cancel", headers=other).status_code, 404)
-        cancelled = self.client.patch("/subscriptions/cancel", headers=self.headers)
+        self.assertEqual(self.client.patch("/subscriptions/cancel", headers=other, json={"subscription_id": saved["subscription_id"], "confirm": True}).status_code, 404)
+        cancelled = self.client.patch("/subscriptions/cancel", headers=self.headers, json={"subscription_id": self.db.data["subscriptions/test-user"]["subscription_id"], "confirm": True})
         self.assertEqual(cancelled.json()["subscription"]["status"], "cancelled")
         renewed = self.client.post("/subscriptions/save", headers=self.headers, json=body)
         self.assertEqual(renewed.status_code, 200)
@@ -96,8 +99,8 @@ class FrontendApiTests(unittest.TestCase):
         self.assertEqual(first.json(), again.json())
         changed = {**body, "engine_settings": {**body["engine_settings"], "duration_days": 14}}
         self.assertEqual(self.client.post("/subscriptions/save", headers=headers, json=changed).status_code, 409)
-        self.client.patch("/subscriptions/cancel", headers=self.headers)
-        self.assertEqual(self.client.patch("/subscriptions/cancel", headers=self.headers).status_code, 200)
+        self.client.patch("/subscriptions/cancel", headers=self.headers, json={"subscription_id": self.db.data["subscriptions/test-user"]["subscription_id"], "confirm": True})
+        self.assertEqual(self.client.patch("/subscriptions/cancel", headers=self.headers, json={"subscription_id": self.db.data["subscriptions/test-user"]["subscription_id"], "confirm": True}).status_code, 200)
         self.assertEqual(self.client.post("/subscriptions/save", headers=headers, json=body).status_code, 409)
         with ThreadPoolExecutor(max_workers=2) as pool:
             statuses = list(pool.map(lambda _: self.client.post("/subscriptions/save", headers=self.headers, json=body).status_code, range(2)))

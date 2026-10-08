@@ -26,7 +26,7 @@ class LoginDeploymentTests(unittest.TestCase):
         }) as verify:
             response = self.client.post("/users/sync", headers={"Authorization": "Bearer test-token"})
         self.assertEqual(response.status_code, 200)
-        verify.assert_called_once_with("test-token")
+        verify.assert_called_once_with("test-token", check_revoked=True)
         self.assertEqual(self.main.db.data["users/verified-user"]["uid"], "verified-user")
 
     def test_missing_or_invalid_token_cannot_save_user(self):

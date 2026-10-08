@@ -24,6 +24,11 @@ class Ref:
     def __init__(self, db, path): self.db, self.path = db, path
     def get(self, **kwargs): return Doc(self, self.db.data.get(self.path))
     def collection(self, name): return Query(self.db, self.path+"/"+name)
+    def delete(self, **kwargs): self.db.data.pop(self.path, None)
+    def collections(self, **kwargs):
+        prefix = self.path + "/"
+        names = {p[len(prefix):].split("/")[0] for p in self.db.data if p.startswith(prefix)}
+        return iter([self.collection(name) for name in names])
     def set(self, data, merge=False):
         self.db.data[self.path] = {**self.db.data.get(self.path,{}), **deepcopy(data)} if merge else deepcopy(data)
 
@@ -31,13 +36,18 @@ class Ref:
 class Query:
     def __init__(self, db, path, filters=(), limit=None):
         self.db, self.path, self.filters, self.count = db, path, filters, limit
+        self.id = path.rsplit("/", 1)[-1]
     def document(self, key): return Ref(self.db, self.path+"/"+key)
+    def list_documents(self, **kwargs):
+        prefix = self.path + "/"
+        names = {p[len(prefix):].split("/")[0] for p in self.db.data if p.startswith(prefix)}
+        return iter([self.document(name) for name in names])
     def where(self, *, filter): return Query(self.db, self.path, self.filters+(filter,), self.count)
     def limit(self, count): return Query(self.db, self.path, self.filters, count)
     def stream(self, **kwargs):
         return iter([Doc(Ref(self.db,path), data) for path,data in self.db.data.items()
             if path.rsplit("/",1)[0] == self.path and all(
-                (data.get(f.field_path)==f.value if f.op_string=="==" else data.get(f.field_path) in f.value)
+                (data.get(f.field_path)==f.value if f.op_string=="==" else (data.get(f.field_path) is not None and data[f.field_path] <= f.value) if f.op_string=="<=" else data.get(f.field_path) in f.value)
                 for f in self.filters)][:self.count])
 
 
@@ -47,13 +57,23 @@ class Tx:
     def create(self, ref, data):
         if ref.path in self.db.data: raise ValueError("EXISTS")
         self.writes.append((ref.path, deepcopy(data)))
-    def commit(self): self.db.data.update(self.writes)
+    def delete(self, ref): self.writes.append((ref.path, None))
+    def commit(self):
+        for path, data in self.writes:
+            if data is None:
+                self.db.data.pop(path, None)
+            else:
+                self.db.data[path] = data
 
 
 class DB:
     def __init__(self): self.data, self.lock = {}, RLock()
     def collection(self, name): return Query(self, name)
     def transaction(self): return Tx(self)
+    def recursive_delete(self, ref):
+        for path in list(self.data):
+            if path == ref.path or path.startswith(ref.path + "/"):
+                del self.data[path]
 
 
 def transactional(callback):
@@ -77,7 +97,7 @@ class EngineApiTests(unittest.TestCase):
         self.service = EngineService(self.db, clock=lambda:self.now)
         self.patch = patch("google.cloud.firestore.transactional", side_effect=transactional)
         self.patch.start(); self.addCleanup(self.patch.stop)
-        self.env = patch.dict(os.environ, {"ENGINE_API_TOKEN":"a"*48,"FEEDBACK_TOKEN_SECRET":"b"*48})
+        self.env = patch.dict(os.environ, {"ENGINE_API_TOKEN":"a"*48,"FEEDBACK_TOKEN_SECRET":"b"*48,"PUBLIC_CATEGORIES":"economy,it_science,politics,society,world,culture"})
         self.env.start(); self.addCleanup(self.env.stop)
         app = FastAPI(); app.include_router(create_router(lambda:self.db))
         self.client = TestClient(app)
@@ -132,7 +152,7 @@ class EngineApiTests(unittest.TestCase):
     def test_feedback_idempotent_hash_only_and_expiry(self):
         job_id="c"*64
         self.db.data["engine_delivery_jobs/"+job_id]={"user_id":"fixture-user","subscription_id":"fixture-user",
-            "mail_kind":"daily_briefing","status":"processing","selected_article_id":"fixture-article"}
+            "mail_kind":"daily_briefing","scheduled_date_kst":"2026-10-08","status":"processing","selected_article_id":"fixture-article"}
         first=self.service.feedback_token(job_id,job_id)
         self.assertEqual(self.service.feedback_token(job_id,job_id),first)
         doc=self.db.data["feedback_tokens/"+job_id]
@@ -167,7 +187,7 @@ class EngineApiTests(unittest.TestCase):
     def test_deleted_user_cannot_get_new_feedback_token(self):
         job_id="e"*64
         self.db.data["engine_delivery_jobs/"+job_id]={"user_id":"fixture-user","subscription_id":"fixture-user",
-            "mail_kind":"daily_briefing","status":"processing","selected_article_id":"fixture-article"}
+            "mail_kind":"daily_briefing","scheduled_date_kst":"2026-10-08","status":"processing","selected_article_id":"fixture-article"}
         self.db.data["users/fixture-user"]["deletion_requested_at"]=self.now
         with self.assertRaises(HTTPException) as error:self.service.feedback_token(job_id,job_id)
         self.assertEqual(error.exception.status_code,410)
@@ -181,7 +201,7 @@ class EngineApiTests(unittest.TestCase):
         main.app.dependency_overrides[main.get_current_user]=lambda:{"uid":"new-user","email":"new@example.com","name":"가상 사용자"}
         self.addCleanup(main.app.dependency_overrides.clear)
         client=TestClient(main.app)
-        self.assertEqual(client.post("/subscriptions/save",json={"plan":"basic"}).status_code,200)
+        self.assertEqual(client.post("/subscriptions/save",json={"plan":"basic"}).status_code,422)
         settings={"categories":["economy"],"keywords":[],"delivery_hour_kst":9,"duration_days":7,"consent_version":"v1"}
         response=client.post("/subscriptions/save",json={"plan":"basic","engine_settings":settings})
         self.assertEqual(response.status_code,200)
