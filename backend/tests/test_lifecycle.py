@@ -71,8 +71,8 @@ class LifecycleTests(unittest.TestCase):
         self.db.data["subscriptions/test-user"]["settings_versions"][-1]["keywords"] = ["changed"]
         self.assertEqual(service.snapshot(identity,day), due)
 
-    def test_public_categories_fail_closed_and_tokens_do_not_leak_in_errors(self):
-        with patch.dict(os.environ, {"PUBLIC_CATEGORIES":""}):
+    def test_unknown_category_configuration_fails_closed_and_tokens_do_not_leak_in_errors(self):
+        with patch.dict(os.environ, {"PUBLIC_CATEGORIES":"unsupported"}):
             self.assertEqual(self.client.get("/catalog").json()["categories"], [])
             body = {"engine_settings":{"categories":["economy"],"keywords":[],"delivery_hour_kst":9,
                                         "duration_days":7,"consent_version":"v1"}}
@@ -266,6 +266,35 @@ class LifecycleTests(unittest.TestCase):
 class ConnectionFixTests(unittest.TestCase):
     setUp = frontend_tests.FrontendApiTests.setUp
     subscribe = LifecycleTests.subscribe
+
+    def test_unset_or_blank_category_option_supports_catalog_subscribe_and_settings(self):
+        expected = ["culture", "economy", "it_science", "politics", "society", "world"]
+        for index, option in enumerate((None, "", "  ")):
+            with self.subTest(option=option), patch.dict(os.environ):
+                if option is None:
+                    os.environ.pop("PUBLIC_CATEGORIES", None)
+                else:
+                    os.environ["PUBLIC_CATEGORIES"] = option
+                self.assertEqual(self.client.get("/catalog").json()["categories"], expected)
+                headers = {"Authorization":"Bearer default-user-"+str(index)}
+                settings = {"categories":["economy","world"], "keywords":[], "delivery_hour_kst":9,
+                            "duration_days":7, "consent_version":"v1"}
+                saved = self.client.post("/subscriptions/save",headers=headers,json={"engine_settings":settings})
+                self.assertEqual(saved.status_code,200,saved.text)
+                identity = saved.json()["subscription"]["subscription_id"]
+                changed = self.client.patch("/subscriptions/"+identity+"/settings",headers=headers,json={
+                    "categories":["culture","it_science"], "keywords":[], "delivery_hour_kst":18,"expected_settings_version":1})
+                self.assertEqual(changed.status_code,200,changed.text)
+                self.assertEqual(changed.json()["subscription"]["next_settings"]["categories"],["culture","it_science"])
+
+    def test_category_restriction_normalizes_spacing_without_enabling_unknown_values(self):
+        with patch.dict(os.environ,{"PUBLIC_CATEGORIES":" economy, world,economy,unknown "}):
+            self.assertEqual(self.client.get("/catalog").json()["categories"],["economy","world"])
+            settings = {"categories":["politics"], "keywords":[], "delivery_hour_kst":9,
+                        "duration_days":7, "consent_version":"v1"}
+            response = self.client.post("/subscriptions/save",headers=self.headers,json={"engine_settings":settings})
+            self.assertEqual(response.status_code,422)
+            self.assertNotIn("subscriptions/test-user",self.db.data)
 
     def test_legacy_document_settings_change_uses_original_reference(self):
         saved = self.subscribe()

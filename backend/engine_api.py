@@ -87,7 +87,13 @@ def effective_settings(data, day):
 
 
 def public_categories():
-    return [v for v in sorted(CATEGORIES) if v in os.getenv("PUBLIC_CATEGORIES", "").split(",")]
+    # A missing deployment option must not make the subscription form unusable.
+    # Nonempty configuration still restricts both catalog and write validation.
+    configured = os.getenv("PUBLIC_CATEGORIES", "").strip()
+    if not configured:
+        return sorted(CATEGORIES)
+    requested = {value.strip() for value in configured.split(",") if value.strip()}
+    return [value for value in sorted(CATEGORIES) if value in requested]
 
 
 class EngineService:

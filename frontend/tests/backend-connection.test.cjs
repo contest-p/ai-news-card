@@ -33,7 +33,7 @@ function harness(respond) {
     catalog = { categories: ['economy'], consent_version: 'v1', capabilities: {} };
     setup = { consent: true, categories: ['economy'], keywords: ['AI'], delivery_hour_kst: 9, duration_days: 14 };
     currentSubscription = normalizeSubscription(${JSON.stringify(subscription)});
-    globalThis.actions = { api, createSubscription, refreshSubscription, cancelSubscription, saveSettings, requestDeletion, reloadDeletion, consumeFeedbackToken, submitFeedback, chooseRating, normalizeSubscription, getSession, onAction, openCancelModal, wire, addKeyword, endedPage, resolveFeedback, renderRoute, managePage, accountPage, feedbackPage, loadCatalog };
+    globalThis.actions = { api, createSubscription, refreshSubscription, cancelSubscription, saveSettings, requestDeletion, reloadDeletion, consumeFeedbackToken, submitFeedback, chooseRating, normalizeSubscription, getSession, onAction, openCancelModal, wire, addKeyword, endedPage, resolveFeedback, renderRoute, managePage, accountPage, feedbackPage, loadCatalog, setupPage };
     globalThis.state = () => ({ subscription: currentSubscription, error: pageError, setup, draftSettings, deletionRequest, feedbackToken, feedbackValid, feedbackError, feedbackDraft, chosenRating, feedbackSubmitted });
     globalThis.switchAccount = (uid) => { session = { user: { uid } }; };
   `, context);
@@ -342,4 +342,18 @@ test('completion refresh cannot keep data after definitive errors or an account 
   h = harness(async () => { h.context.switchAccount('other-user'); return { status: 503 }; });
   await h.context.actions.refreshSubscription({ preserveOnError: true });
   assert.equal(h.context.state().subscription, null);
+});
+
+
+test('all backend interest choices render and selected interests reach subscription save', async () => {
+  const categories = ['culture','economy','it_science','politics','society','world'];
+  const h = harness(async url => url.endsWith('/catalog')
+    ? { body:{categories,consent_version:'v1'} } : { body:{subscription} });
+  await h.context.actions.loadCatalog();
+  const html = h.context.actions.setupPage();
+  for (const id of categories) assert.ok(html.includes('data-category="'+id+'"'));
+  vm.runInContext('setup.categories = ["economy","world"]',h.context);
+  await h.context.actions.createSubscription();
+  const saved = h.requests.find(r => r.url.endsWith('/subscriptions/save'));
+  assert.deepEqual(JSON.parse(saved.options.body).engine_settings.categories,['economy','world']);
 });
