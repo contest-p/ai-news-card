@@ -18,7 +18,7 @@ ${css}
 @font-face{font-family:CardKorean;src:url(data:font/ttf;base64,${input.font_base64})}
 :root{font-family:CardKorean,sans-serif}body{margin:0;background:#fff}
 .card{width:1080px;border:0;border-radius:0;padding:0;box-shadow:none}
-.card .news-template{zoom:2;width:540px;margin:0;border-radius:0;box-shadow:none}
+.card .news-template{zoom:2.5;width:432px;margin:0;border-radius:0;box-shadow:none}
 .card .news-template-header{flex-wrap:wrap}.card .news-card-date{white-space:normal}
 </style></head><body><main class="card">${markup}</main></body></html>`);
 }
