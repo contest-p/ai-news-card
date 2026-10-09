@@ -106,8 +106,6 @@ jobs:
           npm ci --prefix engine
           cd engine
           npx --no-install playwright install --with-deps chromium
-          sudo apt-get update
-          sudo apt-get install -y fonts-nanum
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: github.event_name == 'schedule' || inputs.mode == 'run'
         with:
@@ -137,7 +135,7 @@ jobs:
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           ENGINE_ARCHIVE_RETENTION_DAYS: ${{ vars.ENGINE_ARCHIVE_RETENTION_DAYS }}
           ENGINE_MAX_CARD_JOBS_PER_BATCH: ${{ vars.ENGINE_MAX_CARD_JOBS_PER_BATCH || '0' }}
-          CARD_FONT_PATH: /usr/share/fonts/truetype/nanum/NanumGothic.ttf
+          CARD_FONT_PATH: frontend/assets/fonts/NanumGothic-Regular.ttf
           TOKENIZERS_PARALLELISM: 'false'
         run: python -B -m engine.tools.run_batch --run --safe-log --project "$ENGINE_FIREBASE_PROJECT" --delivery-at "$DELIVERY_AT" --preview-subscription-id "$PREVIEW_SUBSCRIPTION_ID"
 
@@ -160,11 +158,9 @@ jobs:
           npm ci --prefix engine
           cd engine
           npx --no-install playwright install --with-deps chromium
-          sudo apt-get update
-          sudo apt-get install -y fonts-nanum
       - name: Render fixture cards only (no mail or external APIs)
         env:
-          CARD_FONT_PATH: /usr/share/fonts/truetype/nanum/NanumGothic.ttf
+          CARD_FONT_PATH: frontend/assets/fonts/NanumGothic-Regular.ttf
         run: |
           python -B -m engine.tools.render_template_examples
           python -B -m engine.tools.render_layout_check

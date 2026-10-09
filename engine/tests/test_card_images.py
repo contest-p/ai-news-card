@@ -69,6 +69,10 @@ class CardImageTests(unittest.TestCase):
         self.assertEqual(images, ())
         self.assertEqual(issues, ["IMAGE_CARD_INPUT_MISMATCH_TEXT_ONLY"])
 
+    def test_bundled_font_is_the_default_without_os_font_installation(self):
+        from engine.card_render import ROOT
+        self.assertEqual(resolve_font_path({}), ROOT / "frontend/assets/fonts/NanumGothic-Regular.ttf")
+
     def test_font_path_uses_environment_then_candidates(self):
         font = self.root / "card.ttf"
         font.write_bytes(b"font")
