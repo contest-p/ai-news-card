@@ -227,13 +227,49 @@ class ChatClientTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_whole_json_fence_is_accepted_without_loosening_json_validation(self):
+        from engine.chat_worker import parse_content
+        for content in ['```json\n{"card1": {}, "card2": null}\n```',
+                        '```\n{"card1": {}, "card2": null}\n```']:
+            self.assertEqual(parse_content(content), {"card1": {}, "card2": None})
+        for content in ['설명\n```json\n{}\n```', '```json\n{"a":1,"a":2}\n```',
+                        '```json\n{"a":NaN}\n```', '```json\n{}\n```\n설명', '[]']:
+            with self.assertRaisesRegex(ValueError, "CHAT_DRAFT_JSON_INVALID"):
+                parse_content(content)
+
+    def test_worker_failure_reasons_survive_parent_without_private_details(self):
+        from engine.chat_client import RESPONSE_ERRORS
+        client = CodysseyChatClient(ChatSettings("private-key", "https://example.com/v1", "test"))
+        for code in RESPONSE_ERRORS:
+            process = subprocess.CompletedProcess([], 0, stdout=json.dumps({"error": code}))
+            with patch("engine.chat_client.subprocess.run", return_value=process):
+                with self.assertRaises(ChatFailure) as error:
+                    client.complete([])
+            self.assertEqual(error.exception.code, code)
+            self.assertNotIn("private-key", str(error.exception))
+
+    def test_truncated_or_refused_completion_is_never_recovered_as_json(self):
+        from engine.chat_worker import request_draft
+        config = {"base_url": "https://example.com/v1", "api_key": "private", "payload": {}}
+        for reason, message, code in [
+            ("length", {"content": "{}"}, "CHAT_RESPONSE_TRUNCATED"),
+            ("content_filter", {"content": "{}"}, "CHAT_RESPONSE_REFUSED"),
+            ("stop", {"content": "{}", "refusal": "private-detail"}, "CHAT_RESPONSE_REFUSED"),
+            ("stop", {"content": ""}, "CHAT_RESPONSE_EMPTY"),
+            ("stop", {"content": None}, "CHAT_RESPONSE_EMPTY"),
+        ]:
+            with patch("engine.chat_worker.build_opener") as opener:
+                opener.return_value.open.return_value.__enter__.return_value.read.return_value = json.dumps(
+                    {"choices": [{"finish_reason": reason, "message": message}]}).encode()
+                with self.assertRaisesRegex(ValueError, code):
+                    request_draft(config)
+
     def test_refusal_truncation_and_invalid_json_do_not_become_cards(self):
         from engine.chat_worker import request_draft
         config = {"base_url": "https://example.com/v1", "api_key": "not-real", "payload": {}}
         for choice in [
             {"finish_reason": "length", "message": {"content": "{}"}},
             {"finish_reason": "stop", "message": {"content": "{}", "refusal": "refused"}},
-            {"finish_reason": "stop", "message": {"content": '```json\n{}\n```'}},
             {"finish_reason": "stop", "message": {"content": '{"card1":{},"card1":{}}'}},
         ]:
             with self.subTest(choice=choice):
