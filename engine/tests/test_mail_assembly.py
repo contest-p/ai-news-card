@@ -48,7 +48,9 @@ class MailAssemblyTests(unittest.TestCase):
                 self.assertIn(sentence["text"], plain)
         self.assertIn("근거 보도일:", plain)
         self.assertIn("AI 생성", html)
-        self.assertIn("텍스트로 읽기", html)
+        self.assertNotIn("텍스트로 읽기", html)
+        self.assertEqual(html.count("<img "), 2)
+        self.assertNotIn("<h3", html)
         self.assertEqual(parsed["To"], "one@example.invalid")
 
     def test_missing_image_still_has_complete_text(self):

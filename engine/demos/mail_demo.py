@@ -37,8 +37,9 @@ def main():
         preview = html
         for image in images:
             preview = preview.replace("cid:" + image.content_id, "data:image/png;base64," + base64.b64encode(image.png).decode())
-        import re
-        blocked = re.sub(r'<img\b[^>]*>', '<p style="padding:16px;background:#f1f3ee;color:#52635b;">이미지가 차단되어 아래 텍스트 설명을 표시합니다.</p>', preview)
+        from dataclasses import replace
+        # Render the real text-only path, rather than inventing a browser-only substitute.
+        blocked = assemble_mail(replace(mail_data, inline_images=()))[1].get_body(preferencelist=("html",)).get_content()
         (output_dir / "preview.html").write_text(preview, encoding="utf-8")
         (output_dir / "images-blocked.html").write_text(blocked, encoding="utf-8")
         (output_dir / "text-fallback.txt").write_text(plain, encoding="utf-8")

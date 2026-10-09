@@ -7,7 +7,7 @@ async function main() {
   const root = process.argv[2];
   if (!root) throw new Error('MAIL_PREVIEW_DIRECTORY_REQUIRED');
   const report = JSON.parse(fs.readFileSync(path.join(root, 'mail_result.json'), 'utf8'));
-  const expectedText = { news_card: '텍스트로 읽기', no_news: '오늘은 새 브리핑이 없습니다',
+  const expectedText = { news_card: '오늘의 관심 뉴스', no_news: '오늘은 새 브리핑이 없습니다',
     end_notice: '뉴스 브리핑 구독이 종료되었습니다' }[report.content_kind];
   if (!expectedText) throw new Error('MAIL_CONTENT_KIND_INVALID');
   const candidates = [process.env.CARD_BROWSER_PATH,
@@ -29,7 +29,9 @@ async function main() {
           viewportWidth: innerWidth, imageCount: document.images.length,
           missingImages: [...document.images].filter(img => !img.complete || !img.naturalWidth).length,
           textVisible: document.body.innerText.includes(expected),
+          repeatedCardBody: document.body.innerText.includes('텍스트로 읽기'),
           sourceLinkCount: document.querySelectorAll('a').length }), expectedText);
+        if (file === 'preview.html' && layout.imageCount > 0 && layout.repeatedCardBody) throw new Error('DUPLICATE_CARD_BODY');
         if (layout.scrollWidth > width || layout.missingImages || externalRequests || !layout.textVisible) throw new Error('MAIL_LAYOUT_CHECK_FAILED');
         const png = path.join(root, `${file.replace('.html', '')}-${width}.png`);
         await page.screenshot({ path: png, fullPage: true });

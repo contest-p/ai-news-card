@@ -23,6 +23,9 @@ class CardRenderTests(unittest.TestCase):
         self.assertIn("AI 생성", html)
         self.assertIn('data-card-number="1"', html)
         self.assertNotIn('data-card-number="2"', html)
+        self.assertNotIn("news-template-header", html.split("</style>")[1])
+        self.assertNotIn("오늘의 관심 뉴스", html)
+        self.assertNotIn("하루 한 번, 한눈에 읽는 브리핑", html)
 
     def test_maximum_lengths_preserved_and_extra_rejected(self):
         self.data["title"] = "제" * 60

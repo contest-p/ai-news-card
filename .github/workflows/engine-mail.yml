@@ -165,3 +165,8 @@ jobs:
         run: |
           python -B -m engine.tools.render_template_examples
           python -B -m engine.tools.render_layout_check
+      - name: Verify assembled fixture mail at desktop and mobile widths (no sending)
+        run: |
+          node engine/tools/render_mail_preview.cjs .engine-local/template-examples/01-story
+          node engine/tools/render_mail_preview.cjs .engine-local/template-examples/02-comparison
+          node engine/tools/render_mail_preview.cjs .engine-local/template-examples/03-timeline
