@@ -222,7 +222,7 @@ class ConnectedStoreTests(unittest.TestCase):
             path = urlsplit(request.full_url).path
             if path.endswith("/due"):
                 data = {"subscriptions": [snapshot]}
-            elif path.endswith("/expired"):
+            elif path.endswith(("/expired", "/previews")):
                 data = {"subscriptions": []}
             elif path.endswith("/eligibility"):
                 data = {"eligible": True, "reason": "active"}

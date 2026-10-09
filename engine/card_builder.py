@@ -10,6 +10,7 @@ from typing import Callable
 
 from engine.article_store import ArticleRepository, StoredArticle
 from engine.generation import GenerationBusy, generate_cards
+from engine.localization import TranslationFailure, korean_card
 from engine.pipeline import CardOutcome
 from engine.rag import RagResult, past_cutoff
 
@@ -60,12 +61,21 @@ class GenerationCardBuilder:
         result = output.get("result") or {}
         issues = rag_issues + tuple(result.get("issues", ()))
         if output["status"] == "completed" and result.get("status") == "ready_for_review":
+            try:
+                card_data, translated = korean_card(result["card_data"], source_key=output["generation_key"],
+                    client=self.client, store=self.store, model=self.model, base_url=self.base_url)
+            except TranslationFailure as exc:
+                return CardOutcome("failed", None, exc.retryable, exc.code, output["generation_key"], issues)
+            except GenerationBusy:
+                return CardOutcome("failed", None, True, "TRANSLATION_BUSY", output["generation_key"], issues)
+            if translated:
+                issues += ("KOREAN_TRANSLATION_APPLIED",)
             if self.record_usage is not None:
                 try:
-                    self.record_usage(job.job_id, result["card_data"])
+                    self.record_usage(job.job_id, card_data)
                 except Exception:
                     return CardOutcome("failed", None, True, "RAG_USAGE_RECORD_FAILED", output["generation_key"], issues)
-            return CardOutcome("ready", result["card_data"], False, None, output["generation_key"], issues)
+            return CardOutcome("ready", card_data, False, None, output["generation_key"], issues)
         # retryable은 남은 호출 횟수 안에서 다음 실행에 다시 시도한다(최초 포함 2회).
         return CardOutcome("failed", None, output["status"] == "retryable",
                            output.get("error_code") or "CARD_GENERATION_FAILED", output["generation_key"], issues)

@@ -349,7 +349,7 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
                     'border-radius:20px;font-size:13px;line-height:1.5;color:#70491f;">'
                     '<strong style="color:#283449;">선택 이유</strong> · ' + escape(reason) +
                     '</td></tr></table>')
-    ai_note = '<p style="margin:0;font-size:12px;line-height:1.6;color:#738091;">AI 생성 · 원문 발췌를 기반으로 설명했어요.</p>'
+    ai_note = '<p style="margin:0;font-size:12px;line-height:1.6;color:#738091;">AI 생성 · 원문 근거를 바탕으로 설명했어요. 영문 기사는 한국어로 번역했어요.</p>'
     notice_html = ('<p style="margin:12px 0 0;padding:10px 12px;background:#f4f6f8;border-radius:8px;'
                    'font-size:11px;line-height:1.6;color:#63716b;">' + escape(notice) + '</p>') if notice else ""
     html = mail_shell(
