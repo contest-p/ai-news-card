@@ -1,5 +1,6 @@
 """Fixed template examples, local only; no AI, database or SMTP calls."""
 import json
+import subprocess
 from engine.card_render import ROOT, render_card_data, resolve_font_path
 
 
@@ -7,8 +8,14 @@ def main():
     examples = json.loads((ROOT / "engine/samples/template-layouts.json").read_text("utf-8"))
     root = ROOT / ".engine-local/template-examples"
     font = resolve_font_path()
+    print("Font format:", font.read_bytes()[:4].hex(), "bytes:", font.stat().st_size)
     for example in examples:
-        result = render_card_data(example["data"], root / example["name"], font_path=font)
+        try:
+            result = render_card_data(example["data"], root / example["name"], font_path=font)
+        except subprocess.CalledProcessError as error:
+            # This tool renders public fixtures only, never subscriber/article data.
+            print(error.stderr or "Renderer subprocess failed")
+            raise
         layout = result["layout_result"][0]
         print(example["name"], "overflow:", len(layout["overflow"]), "bytes:", layout["bytes"])
     images = "".join(f'<figure><img src="{e["name"]}/card1.png" alt="{e["name"]}"><figcaption>{e["name"]}</figcaption></figure>' for e in examples)

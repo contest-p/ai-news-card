@@ -18,8 +18,16 @@ async function main() {
     const requests = [];
     await context.route('**/*', route => { requests.push(route.request().url()); return route.abort(); });
     const page = await context.newPage();
+    page.on('console', message => {
+      const text = message.text();
+      if (text.startsWith('OTS parsing error:')) process.stderr.write(text + '\n');
+      if (text.startsWith('Failed to decode downloaded font:')) process.stderr.write('FONT_DECODE_FAILED\n');
+    });
     await page.setContent(fs.readFileSync(htmlPath, 'utf8'), { waitUntil: 'load' });
-    await page.evaluate(async () => { await document.fonts.ready; });
+    await page.evaluate(async () => {
+      await document.fonts.load('31px CardKorean', '뉴스 브리핑');
+      await document.fonts.ready;
+    });
     const layout = await page.evaluate(() => {
       const card = document.querySelector('.news-template');
       const rect = card.getBoundingClientRect();
@@ -29,10 +37,14 @@ async function main() {
           || el.scrollWidth > el.clientWidth + 1;
       }).map(el => el.tagName + '.' + el.className);
       return { width: rect.width, height: Math.ceil(rect.height), overflow,
-        fontLoaded: document.fonts.check('31px CardKorean'),
+        fontLoaded: document.fonts.check('31px CardKorean', '뉴스 브리핑'),
+        fontFaces: [...document.fonts].map(face => ({family: face.family, status: face.status})),
         minimumTextPx: 2 * Math.min(...[...card.querySelectorAll('h1,p,a,.news-template-label,.news-template-ai')].map(el => parseFloat(getComputedStyle(el).fontSize))) };
     });
-    if (layout.overflow.length || !layout.fontLoaded || requests.length) throw new Error('LAYOUT_FONT_OR_NETWORK_CHECK_FAILED');
+    if (layout.overflow.length || !layout.fontLoaded || requests.length) {
+      process.stderr.write(JSON.stringify({ ...layout, externalRequests: requests.length }) + '\n');
+      throw new Error('LAYOUT_FONT_OR_NETWORK_CHECK_FAILED');
+    }
     await page.locator('.news-template').screenshot({ path: pngPath, type: 'png' });
     const bytes = fs.readFileSync(pngPath);
     process.stdout.write(JSON.stringify({ ...layout, bytes: bytes.length,

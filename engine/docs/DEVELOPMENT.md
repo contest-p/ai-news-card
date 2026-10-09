@@ -309,3 +309,10 @@ Actions 수동 실행의 `check-chat`은 공급자 JSON 응답을 확인하고, 
 수치형은 정확히 두 수치의 대상·단위가 같고 서로 다른 명시적 기준일이 있는 경우에만 선택합니다. 집계 기간의 동등성을 추정하지 않고 증감률을 계산하지 않습니다. 흐름형은 근거 구절에 있는 서로 다른 기준일을 가진 2~4개 문장을 날짜순으로 보여줍니다. 게시일로 사건 시점을 추정하지 않습니다. 조건이 부족하면 이야기형으로 표시하며 내용을 잘라내지 않습니다.
 
 `python -B -m engine.tools.render_template_examples`로 가상 데이터 3종을 `.engine-local/template-examples/index.html`에서 확인할 수 있습니다. Node, Playwright, 한글 폰트가 필요합니다. 폰트·브라우저 준비 또는 이미지 생성이 실패하면 검증된 텍스트 메일로 발송합니다. 원문/평가 버튼은 기존 HTML 메일 영역에 유지됩니다.
+
+
+### Actions 이미지 폰트 호환성
+
+Ubuntu `fonts-nanum`의 NanumGothic.ttf는 Chromium의 폰트 검사에서 `TSI3: zero-length table`로 거부돼 텍스트로 전환될 수 있습니다. Google Fonts에서 버전·해시 고정한 `frontend/assets/fonts/NanumGothic-Regular.ttf`와 OFL 라이선스를 함께 보관하며 Actions와 로컬 기본값 모두 이 폰트를 사용합니다. 캡처 전에 한글 문자열로 폰트를 명시적으로 로드합니다.
+
+Actions의 `check-render`는 별도 대기열에서 가상 카드 3종과 최대 입력만 렌더링합니다. SMTP·AI·DB 연결이나 운영 비밀정보를 사용하지 않습니다. 상세 폰트 오류는 이 가상 데이터 진단으로 확인합니다.
