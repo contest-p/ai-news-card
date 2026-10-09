@@ -77,5 +77,5 @@ class GenerationCardBuilder:
                     return CardOutcome("failed", None, True, "RAG_USAGE_RECORD_FAILED", output["generation_key"], issues)
             return CardOutcome("ready", card_data, False, None, output["generation_key"], issues)
         # retryable은 남은 호출 횟수 안에서 다음 실행에 다시 시도한다(최초 포함 2회).
-        return CardOutcome("failed", None, output["status"] == "retryable",
+        return CardOutcome("failed", None, output["status"] == "retryable" and output["attempts"] < 2,
                            output.get("error_code") or "CARD_GENERATION_FAILED", output["generation_key"], issues)

@@ -58,6 +58,17 @@ class CardBuilderTests(unittest.TestCase):
                 outcome = self.builder(Client(ChatFailure(code)))(self.job, ARTICLE)
                 self.assertEqual((outcome.status, outcome.retryable, outcome.error_code), ("failed", retryable, code))
 
+    def test_exhausted_invalid_response_is_not_scheduled_forever(self):
+        client = Client(ChatFailure("CHAT_DRAFT_JSON_INVALID"))
+        builder = self.builder(client)
+        first = builder(self.job, ARTICLE)
+        second = builder(self.job, ARTICLE)
+        third = builder(self.job, ARTICLE)
+        self.assertTrue(first.retryable)
+        self.assertFalse(second.retryable)
+        self.assertFalse(third.retryable)
+        self.assertEqual(client.calls, 2)
+
     def test_no_evidence_search_omits_background(self):
         record = InMemoryArticleRepository().save(ARTICLE, observed_at=NOW).record
         result = no_evidence_search(record, NOW.date())

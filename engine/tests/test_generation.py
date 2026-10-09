@@ -54,6 +54,36 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(output["result"]["card_data"]["card1"]["sentences"][0]["numbers"][0]["surface"], "53")
         self.assertIn("NUMBER_SURFACE_UNIT_SEPARATED", output["format_review"]["changes"])
 
+    def test_number_order_and_units_are_derived_from_verified_text(self):
+        self.fixture.current_body("은행은 대출금리를 3.5%로 정하고 대출은 2건 승인했습니다.")
+        self.fixture.draft["card2"] = None
+        quote = self.fixture.current.article.body
+        sentence = self.fixture.draft["card1"]["sentences"][0]
+        sentence["numbers"] = [
+            {"surface": "2", "unit": "loans", "subject": "대출", "as_of": None,
+             "source_article_id": "current", "evidence_quote": quote},
+            {"surface": "3.5", "unit": "percent", "subject": "대출금리", "as_of": None,
+             "source_article_id": "current", "evidence_quote": quote},
+        ]
+        output = self.run_generation()
+        self.assertEqual(output["status"], "completed")
+        actual = output["result"]["card_data"]["card1"]["sentences"][0]
+        self.assertEqual(actual["text"], quote)
+        self.assertEqual([(n["surface"], n["unit"]) for n in actual["numbers"]], [("3.5", "%"), ("2", "건")])
+        self.assertEqual(self.calls, 1)
+
+    def test_number_repair_never_invents_amount_or_subject(self):
+        from engine.generation import repair_format
+        self.fixture.current_body("은행은 대출금리를 3.5%로 정했습니다.")
+        self.fixture.draft["card2"] = None
+        quote = self.fixture.current.article.body
+        sentence = self.fixture.draft["card1"]["sentences"][0]
+        for surface, subject in [("4.5", "대출금리"), ("3.5", "주택가격")]:
+            sentence["numbers"] = [{"surface": surface, "unit": "%", "subject": subject,
+                                     "as_of": None, "source_article_id": "current", "evidence_quote": quote}]
+            self.assertIsNone(repair_format(self.fixture.draft, self.fixture.current, self.fixture.rag,
+                                           self.fixture.publishers, self.fixture.day))
+
     def test_explicit_400_recovery_keeps_attempt_count_and_limit(self):
         class Failing:
             def complete(self, messages):
@@ -227,13 +257,49 @@ class ChatClientTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_whole_json_fence_is_accepted_without_loosening_json_validation(self):
+        from engine.chat_worker import parse_content
+        for content in ['```json\n{"card1": {}, "card2": null}\n```',
+                        '```\n{"card1": {}, "card2": null}\n```']:
+            self.assertEqual(parse_content(content), {"card1": {}, "card2": None})
+        for content in ['설명\n```json\n{}\n```', '```json\n{"a":1,"a":2}\n```',
+                        '```json\n{"a":NaN}\n```', '```json\n{}\n```\n설명', '[]']:
+            with self.assertRaisesRegex(ValueError, "CHAT_DRAFT_JSON_INVALID"):
+                parse_content(content)
+
+    def test_worker_failure_reasons_survive_parent_without_private_details(self):
+        from engine.chat_client import RESPONSE_ERRORS
+        client = CodysseyChatClient(ChatSettings("private-key", "https://example.com/v1", "test"))
+        for code in RESPONSE_ERRORS:
+            process = subprocess.CompletedProcess([], 0, stdout=json.dumps({"error": code}))
+            with patch("engine.chat_client.subprocess.run", return_value=process):
+                with self.assertRaises(ChatFailure) as error:
+                    client.complete([])
+            self.assertEqual(error.exception.code, code)
+            self.assertNotIn("private-key", str(error.exception))
+
+    def test_truncated_or_refused_completion_is_never_recovered_as_json(self):
+        from engine.chat_worker import request_draft
+        config = {"base_url": "https://example.com/v1", "api_key": "private", "payload": {}}
+        for reason, message, code in [
+            ("length", {"content": "{}"}, "CHAT_RESPONSE_TRUNCATED"),
+            ("content_filter", {"content": "{}"}, "CHAT_RESPONSE_REFUSED"),
+            ("stop", {"content": "{}", "refusal": "private-detail"}, "CHAT_RESPONSE_REFUSED"),
+            ("stop", {"content": ""}, "CHAT_RESPONSE_EMPTY"),
+            ("stop", {"content": None}, "CHAT_RESPONSE_EMPTY"),
+        ]:
+            with patch("engine.chat_worker.build_opener") as opener:
+                opener.return_value.open.return_value.__enter__.return_value.read.return_value = json.dumps(
+                    {"choices": [{"finish_reason": reason, "message": message}]}).encode()
+                with self.assertRaisesRegex(ValueError, code):
+                    request_draft(config)
+
     def test_refusal_truncation_and_invalid_json_do_not_become_cards(self):
         from engine.chat_worker import request_draft
         config = {"base_url": "https://example.com/v1", "api_key": "not-real", "payload": {}}
         for choice in [
             {"finish_reason": "length", "message": {"content": "{}"}},
             {"finish_reason": "stop", "message": {"content": "{}", "refusal": "refused"}},
-            {"finish_reason": "stop", "message": {"content": '```json\n{}\n```'}},
             {"finish_reason": "stop", "message": {"content": '{"card1":{},"card1":{}}'}},
         ]:
             with self.subTest(choice=choice):

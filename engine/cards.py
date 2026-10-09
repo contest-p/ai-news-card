@@ -242,6 +242,29 @@ def repair_numeric_format(draft, current: StoredArticle):
                         and number["evidence_quote"] in quote):
                     number["evidence_quote"] = quote
                     changes.append("NUMBER_QUOTE_EXPANDED_TO_VERIFIED_SENTENCE")
+        # Order and recognized units are a deterministic property of the verified
+        # excerpt, not an AI judgment. Keep every quantity and subject unchanged.
+        matches = quantity_matches(normalized(sentence["text"]))
+        numbers = sentence["numbers"]
+        if (sentence["source_article_id"] == current.article.article_id
+                and normalized(quote) in normalized(current.article.body)
+                and normalized(sentence["text"]) in normalized(quote)
+                and sorted(normalized(n["surface"]) for n in numbers) == sorted(v for v, _ in matches)
+                and all(n["source_article_id"] == sentence["source_article_id"]
+                        and n["evidence_quote"] == quote and n["as_of"] == sentence["as_of"]
+                        and normalized(n["subject"]) in normalized(quote) for n in numbers)):
+            remaining = list(numbers)
+            aligned = []
+            for surface, unit in matches:
+                number = next(n for n in remaining if normalized(n["surface"]) == surface)
+                remaining.remove(number)
+                if number["unit"] != unit:
+                    number["unit"] = unit
+                    changes.append("NUMBER_UNIT_FROM_VERIFIED_TEXT")
+                aligned.append(number)
+            if numbers != aligned:
+                changes.append("NUMBER_ORDER_FROM_VERIFIED_TEXT")
+            sentence["numbers"] = aligned
         try:
             validate_card({"sentences": [sentence], "terms": []},
                           {current.article.article_id: current}, current.article.article_id, background=False)

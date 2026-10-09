@@ -1,6 +1,7 @@
 """API 프로세스: 부모가 전체 60초 뒤 중단. 오류 응답·헤더·비밀값은 출력하지 않는다."""
 
 import json
+import re
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -8,6 +9,29 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from engine.chat_client import strict_json
 
 MAX_BYTES = 2_000_000  # 응답 크기 제한 제안
+
+
+class ResponseFailure(ValueError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
+def parse_content(content):
+    """Accept a whole JSON fence, never extract JSON out of arbitrary prose."""
+    if type(content) is not str or not content.strip():
+        raise ResponseFailure("CHAT_RESPONSE_EMPTY")
+    text = content.strip()
+    fence = re.fullmatch(r"```(?:json)?\s*\n([\s\S]*?)\n```", text, flags=re.IGNORECASE)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        draft = strict_json(text)
+    except (ValueError, TypeError):
+        raise ResponseFailure("CHAT_DRAFT_JSON_INVALID") from None
+    if type(draft) is not dict:
+        raise ResponseFailure("CHAT_DRAFT_JSON_INVALID")
+    return draft
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -26,15 +50,19 @@ def request_draft(config):
         raise ValueError()
     body = strict_json(raw.decode("utf-8"))
     choices = body["choices"]
-    if type(choices) is not list or len(choices) != 1 or choices[0]["finish_reason"] != "stop":
+    if type(choices) is not list or len(choices) != 1:
+        raise ValueError()
+    finish = choices[0].get("finish_reason")
+    if finish == "length":
+        raise ResponseFailure("CHAT_RESPONSE_TRUNCATED")
+    if finish == "content_filter":
+        raise ResponseFailure("CHAT_RESPONSE_REFUSED")
+    if finish != "stop":
         raise ValueError()
     message = choices[0]["message"]
-    if message.get("refusal") or type(message["content"]) is not str:
-        raise ValueError()
-    draft = strict_json(message["content"])
-    if type(draft) is not dict:
-        raise ValueError()
-    return draft
+    if message.get("refusal"):
+        raise ResponseFailure("CHAT_RESPONSE_REFUSED")
+    return parse_content(message.get("content"))
 
 
 def main():
@@ -50,6 +78,8 @@ def main():
         except Exception:
             hints = []
         output = {"error": code, "hints": hints}
+    except ResponseFailure as exc:
+        output = {"error": exc.code}
     except (URLError, TimeoutError, OSError):
         output = {"error": "CHAT_NETWORK_ERROR"}
     except Exception:

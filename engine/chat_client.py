@@ -10,6 +10,9 @@ from engine.settings import ChatSettings
 TIMEOUT_SECONDS = 60
 MAX_COMPLETION_TOKENS = 3000  # 로컬 검증용 제안. 운영 비용 한도는 별도 확정.
 
+RESPONSE_ERRORS = {"CHAT_RESPONSE_INVALID", "CHAT_RESPONSE_EMPTY", "CHAT_RESPONSE_TRUNCATED",
+                   "CHAT_RESPONSE_REFUSED", "CHAT_DRAFT_JSON_INVALID"}
+
 
 class ChatFailure(RuntimeError):
     def __init__(self, code, hints=()):
@@ -61,8 +64,8 @@ class CodysseyChatClient:
                 raise ValueError()
             if "error" in envelope:
                 code = envelope["error"]
-                if code not in {"CHAT_NETWORK_ERROR", "CHAT_RESPONSE_INVALID", "CHAT_REDIRECT_BLOCKED"} and not (
-                        type(code) is str and code.startswith("CHAT_HTTP_") and code[10:].isdigit()):
+                if type(code) is not str or (code not in RESPONSE_ERRORS | {"CHAT_NETWORK_ERROR", "CHAT_REDIRECT_BLOCKED"} and not (
+                        code.startswith("CHAT_HTTP_") and code[10:].isdigit())):
                     code = "CHAT_RESPONSE_INVALID"
                 hints = envelope.get("hints", [])
                 allowed = {"response_format", "max_completion_tokens", "max_tokens", "model", "messages", "credit", "quota", "balance"}

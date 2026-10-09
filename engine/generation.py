@@ -119,7 +119,7 @@ def generate_cards(current, rag, *, publishers, work_date_kst: date, job_id, mod
         except ChatFailure as exc:
             state["error_code"] = exc.code
             state["error_hints"] = list(exc.hints)
-            state["status"] = "retryable" if exc.code in {"CHAT_HTTP_429", "CHAT_HTTP_500", "CHAT_HTTP_502", "CHAT_HTTP_503", "CHAT_HTTP_504", "CHAT_RESPONSE_INVALID"} else "blocked"
+            state["status"] = "retryable" if exc.code in {"CHAT_HTTP_429", "CHAT_HTTP_500", "CHAT_HTTP_502", "CHAT_HTTP_503", "CHAT_HTTP_504", "CHAT_RESPONSE_INVALID", "CHAT_RESPONSE_EMPTY", "CHAT_DRAFT_JSON_INVALID"} else "blocked"
         # 기타 중단은 in_flight 기록을 유지하고 재실행을 차단한다.
         store.save(path, state)
         return {**state, "api_called_this_run": True, "reused": False}
