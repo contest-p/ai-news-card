@@ -27,7 +27,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ${{ inputs.preview_subscription_id && format('engine-preview-{0}', inputs.preview_subscription_id) || 'engine-mail-production' }}
+  group: ${{ inputs.mode == 'check-render' && format('engine-render-{0}', github.ref) || (inputs.preview_subscription_id && format('engine-preview-{0}', inputs.preview_subscription_id) || 'engine-mail-production') }}
   cancel-in-progress: false
 
 jobs:
