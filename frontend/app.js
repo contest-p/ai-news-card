@@ -65,7 +65,9 @@ async function renderRoute() {
   if (!session && CONFIG.firebase?.apiKey) await getSession();
   if (["setup", "privacy", "manage"].includes(pageFromPath()) && BASE) await loadCatalog();
   if (["manage", "ended", "complete"].includes(pageFromPath()) && session) await refreshSubscription({preserveOnError:pageFromPath()==="complete"});
-  if (currentPath() === path) render();
+  // 구독 관리로 진입했을 때 구독이 없으면 동의 화면부터 안내한다.
+  if (currentPath() === "/manage" && session && !currentSubscription?.status) history.replaceState({}, "", "/privacy");
+  if (currentPath() === path || currentPath() === "/privacy") render();
 }
 const go = async (path) => { if (currentPath() === "/feedback" && path !== "/feedback") { feedbackEpoch++; feedbackLoading=false; feedbackSaving=false; feedbackToken = null; feedbackValid = false; feedbackDraft = { reasons: [], comment: "" }; chosenRating = null; } history.pushState({}, "", path); isMenuOpen = false; pageError = ""; await renderRoute(); window.scrollTo(0, 0); };
 const urlFor = (path) => path;
@@ -138,9 +140,9 @@ async function loadCatalog() {
 
 function header(active = "") {
   const label = session?.user?.email ? "로그아웃" : "로그인";
-  return `<header class="site-header"><div class="nav-wrap"><a class="brand" href="/" data-go="/"><span class="brand-mark" aria-hidden="true"></span>뉴스 브리핑</a><nav class="nav-links ${isMenuOpen ? "open" : ""}" aria-label="주요 메뉴"><a class="nav-link ${active === "service" ? "active" : ""}" href="/service" data-go="/service">서비스 소개</a><a class="nav-link ${active === "manage" ? "active" : ""}" href="/manage" data-go="/manage">구독 관리</a><a class="nav-link ${active === "privacy" ? "active" : ""}" href="/privacy" data-go="/privacy">개인정보 안내</a></nav><div class="nav-actions"><button class="btn btn-outline btn-sm" data-action="auth">${label}</button><button class="mobile-menu" aria-label="메뉴 열기" data-action="menu">☰</button></div></div></header>`;
+  return `<header class="site-header"><div class="nav-wrap"><a class="brand" href="/" data-go="/"><span class="brand-mark" aria-hidden="true"></span>뉴스 브리핑</a><nav class="nav-links ${isMenuOpen ? "open" : ""}" aria-label="주요 메뉴"><a class="nav-link ${active === "service" ? "active" : ""}" href="/service" data-go="/service">서비스 소개</a><a class="nav-link ${active === "manage" ? "active" : ""}" href="/manage" data-go="/manage">구독 관리</a></nav><div class="nav-actions"><button class="btn btn-outline btn-sm" data-action="auth">${label}</button><button class="mobile-menu" aria-label="메뉴 열기" data-action="menu">☰</button></div></div></header>`;
 }
-function footer(){return `<footer class="footer"><div class="footer-inner"><a class="brand" href="/" data-go="/"><span class="brand-mark" aria-hidden="true"></span>뉴스 브리핑</a><nav class="footer-nav"><a href="/service" data-go="/service">서비스 소개</a><span>·</span><a href="/manage" data-go="/manage">구독 관리</a><span>·</span><a href="/privacy" data-go="/privacy">개인정보 안내</a></nav><span>AI가 생성한 설명은 원문과 함께 확인해 주세요.</span></div></footer>`;}
+function footer(){return `<footer class="footer"><div class="footer-inner"><a class="brand" href="/" data-go="/"><span class="brand-mark" aria-hidden="true"></span>뉴스 브리핑</a><nav class="footer-nav"><a href="/service" data-go="/service">서비스 소개</a><span>·</span><a href="/manage" data-go="/manage">구독 관리</a></nav><span>AI가 생성한 설명은 원문과 함께 확인해 주세요.</span></div></footer>`;}
 function shell(content, active = ""){return `${header(active)}<main>${content}</main>${footer()}`;}
 function stepper(active){const steps=["개인정보 동의","구독 설정","완료"];return `<div class="stepper">${steps.map((s,i)=>`${i?'<span class="step-line"></span>':''}<div class="step ${i+1===active?'active':i+1<active?'done':''}"><span class="step-num">${i+1<active?'✓':i+1}</span><span>${s}</span></div>`).join("")}</div>`;}
 function heroImage(){return `<div class="hero-art hero-image"><img src="/assets/hero-mail.jpg" alt="" width="720" height="720" decoding="async"></div>`;}
