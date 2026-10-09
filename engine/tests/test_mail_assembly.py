@@ -10,7 +10,7 @@ import unittest
 
 from engine.card_render import card_data_hash
 from engine.cards import assemble_cards
-from engine.mail_assembly import InlineImage, NewsMailData, assemble_mail
+from engine.mail_assembly import InlineImage, NewsMailData, WebMailLinks, assemble_mail
 from engine.demos.mail_demo import approved_images
 from engine.tests import test_cards
 
@@ -47,7 +47,7 @@ class MailAssemblyTests(unittest.TestCase):
             for sentence in card["sentences"]:
                 self.assertIn(sentence["text"], plain)
         self.assertIn("근거 보도일:", plain)
-        self.assertIn("AI 편집", html)
+        self.assertIn("AI 생성", html)
         self.assertIn("텍스트로 읽기", html)
         self.assertEqual(parsed["To"], "one@example.invalid")
 
@@ -58,6 +58,26 @@ class MailAssemblyTests(unittest.TestCase):
         self.assertNotIn("<img", html)
         self.assertIn(self.data["card1"]["sentences"][0]["text"], html)
         self.assertEqual(len(list(message.iter_attachments())), 0)
+
+    def test_branded_real_mail_uses_validated_copy_and_hides_preview_label(self):
+        self.data["card1"]["terms"] = [{"term": "가상 용어", "definition": "검증용 풀이입니다.",
+                                         "source_article_id": self.data["article_id"],
+                                         "evidence_quote": "가상 근거"}]
+        message = self.mail(preview=False, web_links=WebMailLinks("https://briefing.example.invalid"),
+                            feedback_token="FIXTURE_TOKEN")
+        html = message.get_body(preferencelist=("html",)).get_content()
+        self.assertIn('role="presentation"', html)
+        self.assertIn("오늘의 관심 뉴스", html)
+        self.assertIn("오늘의 핵심", html)
+        self.assertIn("기사 속 용어", html)
+        self.assertIn("원문 읽기", html)
+        self.assertIn("도움이 됐어요", html)
+        self.assertIn("웹사이트에서 구독 관리하기", html)
+        current_source = next(source for source in self.data["sources"]
+                              if source["article_id"] == self.data["article_id"])
+        self.assertIn(current_source["publisher"], html)
+        self.assertNotIn("메일 수신 예시", html)
+        self.assertNotIn("로컬 검수용", html)
 
     def test_personal_reason_is_escaped_and_recipients_are_separate(self):
         reason = {"type": "keyword", "label": "관심 키워드", "matched_keyword": "<script>"}
