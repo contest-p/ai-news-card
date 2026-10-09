@@ -1,0 +1,147 @@
+[
+  {
+    "name": "01-story",
+    "data": {
+      "schema_version": "1.0",
+      "article_id": "template-example",
+      "title": "가상 예시 · 주인이 바뀌어도 와인의 원칙은 그대로",
+      "published_at": "2026-10-09T06:00:00+09:00",
+      "ai_generated": true,
+      "card2": null,
+      "sources": [
+        {
+          "article_id": "template-example",
+          "publisher": "가상 예시 · 실제 뉴스 아님",
+          "url": "https://example.com/template",
+          "published_at": "2026-10-09T06:00:00+09:00"
+        }
+      ],
+      "card1": {
+        "sentences": [
+          {
+            "text": "와이너리의 주인이 바뀌었습니다.",
+            "source_article_id": "template-example",
+            "evidence_quote": "와이너리의 주인이 바뀌었습니다.",
+            "as_of": null,
+            "temporal_role": "current",
+            "numbers": []
+          },
+          {
+            "text": "운영 체계는 달라졌지만 양조의 기본 원칙은 유지했습니다.",
+            "source_article_id": "template-example",
+            "evidence_quote": "운영 체계는 달라졌지만 양조의 기본 원칙은 유지했습니다.",
+            "as_of": null,
+            "temporal_role": "current",
+            "numbers": []
+          }
+        ],
+        "terms": [
+          {
+            "term": "양조",
+            "definition": "발효 과정을 통해 술을 만드는 일.",
+            "source_article_id": "template-example",
+            "evidence_quote": "발효 과정을 통해 술을 만드는 일."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "02-comparison",
+    "data": {
+      "schema_version": "1.0",
+      "article_id": "template-example",
+      "title": "가상 예시 · 기준일별 충전소 수",
+      "published_at": "2026-10-09T06:00:00+09:00",
+      "ai_generated": true,
+      "card2": null,
+      "sources": [
+        {
+          "article_id": "template-example",
+          "publisher": "가상 예시 · 실제 뉴스 아님",
+          "url": "https://example.com/template",
+          "published_at": "2026-10-09T06:00:00+09:00"
+        }
+      ],
+      "card1": {
+        "sentences": [
+          {
+            "text": "2025-10-01 기준 충전소는 100개입니다.",
+            "source_article_id": "template-example",
+            "evidence_quote": "2025-10-01 기준 충전소는 100개입니다.",
+            "as_of": "2025-10-01",
+            "temporal_role": "current",
+            "numbers": [
+              {
+                "surface": "100",
+                "unit": "개",
+                "subject": "충전소",
+                "as_of": "2025-10-01",
+                "source_article_id": "template-example",
+                "evidence_quote": "2025-10-01 기준 충전소는 100개입니다."
+              }
+            ]
+          },
+          {
+            "text": "2026-10-01 기준 충전소는 120개입니다.",
+            "source_article_id": "template-example",
+            "evidence_quote": "2026-10-01 기준 충전소는 120개입니다.",
+            "as_of": "2026-10-01",
+            "temporal_role": "current",
+            "numbers": [
+              {
+                "surface": "120",
+                "unit": "개",
+                "subject": "충전소",
+                "as_of": "2026-10-01",
+                "source_article_id": "template-example",
+                "evidence_quote": "2026-10-01 기준 충전소는 120개입니다."
+              }
+            ]
+          }
+        ],
+        "terms": []
+      }
+    }
+  },
+  {
+    "name": "03-timeline",
+    "data": {
+      "schema_version": "1.0",
+      "article_id": "template-example",
+      "title": "가상 예시 · 서비스 공개의 흐름",
+      "published_at": "2026-10-09T06:00:00+09:00",
+      "ai_generated": true,
+      "card2": null,
+      "sources": [
+        {
+          "article_id": "template-example",
+          "publisher": "가상 예시 · 실제 뉴스 아님",
+          "url": "https://example.com/template",
+          "published_at": "2026-10-09T06:00:00+09:00"
+        }
+      ],
+      "card1": {
+        "sentences": [
+          {
+            "text": "2026-09-01 일부 사용자에게 시험 서비스를 공개했습니다.",
+            "source_article_id": "template-example",
+            "evidence_quote": "2026-09-01 일부 사용자에게 시험 서비스를 공개했습니다.",
+            "as_of": "2026-09-01",
+            "temporal_role": "current",
+            "numbers": []
+          },
+          {
+            "text": "2026-10-01 모든 사용자가 서비스를 이용할 수 있게 됐습니다.",
+            "source_article_id": "template-example",
+            "evidence_quote": "2026-10-01 모든 사용자가 서비스를 이용할 수 있게 됐습니다.",
+            "as_of": "2026-10-01",
+            "temporal_role": "current",
+            "numbers": []
+          }
+        ],
+        "terms": []
+      }
+    }
+  }
+]

@@ -16,7 +16,7 @@ from engine.selection import KST, canonical_url, parse_timestamp
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "frontend" / "card-template.js"
 TEMPLATE_STYLE = ROOT / "frontend" / "styles.css"
-TEMPLATE_VERSION = "frontend-shared-v1"
+TEMPLATE_VERSION = "frontend-fixed-layouts-v2"
 # CARD_FONT_PATH가 없을 때 찾는 한글 TTF/OTF. GitHub Actions(Ubuntu)는 fonts-nanum 등 설치 필요.
 FONT_CANDIDATES = (
     Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "NotoSansKR-VF.ttf",
