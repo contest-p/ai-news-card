@@ -204,11 +204,60 @@ class CardTests(unittest.TestCase):
         self.assertEqual(self.draft, before)
 
     def test_complete_source_definition_is_retained(self):
-        self.current_body("대출금리는 대출에 적용되는 금리입니다.")
-        term = {"term": "대출금리", "definition": self.current.article.body,
-                "source_article_id": "current", "evidence_quote": self.current.article.body}
+        definition = "대출금리는 대출에 적용되는 금리입니다."
+        event = "은행은 대출금리를 정했습니다."
+        self.current_body(event + " " + definition)
+        self.draft["card1"]["sentences"][0].update(text=event, evidence_quote=event)
+        term = {"term": "대출금리", "definition": definition,
+                "source_article_id": "current", "evidence_quote": definition}
         self.draft["card1"]["terms"] = [term]
         self.assertEqual(self.result().card_data["card1"]["terms"], [term])
+
+    def definition_fixture(self, *, event=True):
+        definition = "기업이 AI 모델을 연결할 때 쓰는 인증정보다."
+        explanation = "API 키는 " + definition
+        incident = "공격자들은 피해 기업의 AI API 키로 공격 작업을 옮겼다."
+        self.current_body(explanation + (" " + incident if event else ""))
+        template = self.draft["card1"]["sentences"][0]
+        self.draft["card1"]["sentences"] = [dict(template, text=text, evidence_quote=text)
+            for text in ([explanation, incident] if event else [explanation])]
+        self.draft["card1"]["terms"] = [{"term": "API 키", "definition": definition,
+            "source_article_id": "current", "evidence_quote": explanation}]
+        return incident, definition
+
+    def test_definition_moves_to_terms_and_event_becomes_lead(self):
+        incident, definition = self.definition_fixture()
+        before = copy.deepcopy(self.draft)
+        result = self.result()
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual([s["text"] for s in result.card_data["card1"]["sentences"]], [incident])
+        self.assertEqual(result.card_data["card1"]["terms"][0]["definition"], definition)
+        self.assertIn("SENTENCE_OMITTED:DEFINITION_IN_TERMS", result.issues)
+        self.assertEqual(self.draft, before)
+
+    def test_definition_only_keeps_sentence_and_omits_duplicate_term(self):
+        self.definition_fixture(event=False)
+        result = self.result()
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(len(result.card_data["card1"]["sentences"]), 1)
+        self.assertEqual(result.card_data["card1"]["terms"], [])
+        self.assertIn("TERM_OMITTED:REPEATED_DEFINITION", result.issues)
+
+    def test_overlapping_definition_does_not_delete_event_sentence(self):
+        definition = "AI 모델을 연결할 때 쓰는 인증정보"
+        event = "공격자들은 AI 모델을 연결할 때 쓰는 인증정보를 훔쳤다."
+        self.current_body(event)
+        self.draft["card1"]["terms"] = [{"term": "인증정보", "definition": definition,
+            "source_article_id": "current", "evidence_quote": event}]
+        result = self.result()
+        self.assertEqual(result.card_data["card1"]["sentences"][0]["text"], event)
+        self.assertEqual(result.card_data["card1"]["terms"], [])
+
+    def test_feed_scope_removed_from_publisher_only(self):
+        self.publishers["current"] = "매일경제 (전체)"
+        result = self.result()
+        self.assertEqual(next(s for s in result.card_data["sources"] if s["article_id"] == "current")["publisher"], "매일경제")
+        self.assertEqual(self.publishers["current"], "매일경제 (전체)")
 
 
 if __name__ == "__main__":

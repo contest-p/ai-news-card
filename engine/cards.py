@@ -17,7 +17,7 @@ DATE = re.compile(r"\d{4}-\d{1,2}-\d{1,2}|\d{4}\.\s?\d{1,2}\.\s?\d{1,2}\.?"
                   r"|(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일|\d{4}년\s*\d{1,2}월")
 TERM_NAME_MAX_CHARS = 20  # 프런트 card-template.js와 같은 값. 김현서와 최종 합의 필요.
 UNIT = re.compile(r"(?:%p|%|억원|만원|만명|억명|명|원|개|건|회|배|년|월|일|시간|분|초)")
-REVIEW_VALIDATOR_VERSION = "extractive-review-v3-dates-term-names"
+REVIEW_VALIDATOR_VERSION = "extractive-review-v4-definition-dedup"
 # 문장 전체의 의미 판정이 아닌, 명백한 접속형 종결을 거르는 품질 제안.
 INCOMPLETE_TERM_END = re.compile(r"(?:하므로|이므로|으므로|하지만|했지만|하며|으며|하는데|했는데|하고|해서)$")
 
@@ -38,6 +38,47 @@ class CardResult:
 
 def normalized(text):
     return unicodedata.normalize("NFKC", text)
+
+
+def publisher_label(value):
+    """RSS 채널 범위 표시는 제외하고 언론사 이름만 보여준다."""
+    return re.sub(r"\s*\(전체\)\s*$", "", value).strip() or value
+
+
+def comparison_text(value):
+    return re.sub(r"[\s.,!?…。]", "", normalized(value)).casefold()
+
+
+def remove_repeated_definitions(card, issues):
+    """검증된 발췌는 바꾸지 않고, 별도 용어 풀이와 겹치는 정의만 정리한다."""
+    sentences = card["sentences"]
+    definition_sentences = []
+    for sentence in sentences:
+        text = comparison_text(sentence["text"])
+        for term in card["terms"]:
+            if sentence["source_article_id"] != term["source_article_id"]:
+                continue
+            definition = comparison_text(term["definition"])
+            name = comparison_text(term["term"])
+            variants = {definition, *(name + suffix + definition for suffix in ("는", "은", "란", "이란", ":"))}
+            if text in variants:
+                definition_sentences.append(sentence)
+                break
+    # 사건 문장이 남는 경우에만 정의를 용어 영역으로 옮긴다.
+    remaining = [sentence for sentence in sentences if sentence not in definition_sentences]
+    if remaining and definition_sentences:
+        card["sentences"] = remaining
+        issues.append("SENTENCE_OMITTED:DEFINITION_IN_TERMS")
+    retained = []
+    for term in card["terms"]:
+        definition = comparison_text(term["definition"])
+        if (any(definition in comparison_text(sentence["text"])
+                for sentence in card["sentences"])
+                or any(definition == comparison_text(previous["definition"]) for previous in retained)):
+            issues.append("TERM_OMITTED:REPEATED_DEFINITION")
+        else:
+            retained.append(term)
+    card["terms"] = retained
 
 
 def quantity_matches(text):
@@ -178,6 +219,7 @@ def assemble_cards(draft, current: StoredArticle, rag: RagResult, *, publishers:
             else:
                 retained.append(term)
         draft["card1"]["terms"] = retained
+        remove_repeated_definitions(draft["card1"], issues)
     except (CardInvalid, ValueError, TypeError, KeyError, AttributeError) as exc:
         return CardResult("failed", None, ("CARD1:" + getattr(exc, "code", "INPUT_INVALID"),))
 
@@ -204,7 +246,7 @@ def assemble_cards(draft, current: StoredArticle, rag: RagResult, *, publishers:
                   for item in card["sentences"] + card["terms"]}
     identities.add(article.article_id)
     try:
-        sources = [{"article_id": identity, "publisher": string(publishers[identity]),
+        sources = [{"article_id": identity, "publisher": publisher_label(string(publishers[identity])),
                     "url": available[identity].article.url,
                     "published_at": available[identity].article.published_at.isoformat()}
                    for identity in sorted(identities)]

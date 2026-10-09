@@ -92,6 +92,17 @@ class MailAssemblyTests(unittest.TestCase):
         self.assertNotEqual(one["Message-ID"], two["Message-ID"])
         self.assertEqual(two["To"], "two@example.invalid")
 
+    def test_ai_keyword_and_feed_scope_display_in_both_bodies(self):
+        self.data["sources"][0]["publisher"] = "매일경제 (전체)"
+        reason = {"type": "keyword", "label": "관심 키워드와 관련된 기사", "matched_keyword": "ai"}
+        message = self.mail(selection_reason=reason)
+        for kind in ("plain", "html"):
+            body = message.get_body(preferencelist=(kind,)).get_content()
+            self.assertIn("관심 키워드와 관련된 기사 · AI", body)
+            self.assertIn("매일경제 ·", body)
+            self.assertNotIn("매일경제 (전체)", body)
+        self.assertEqual(reason["matched_keyword"], "ai")
+
     def test_header_injection_and_unsafe_management_link_rejected(self):
         with self.assertRaises(ValueError):
             self.mail(recipient_email="one@example.invalid\r\nBcc: other@example.invalid")

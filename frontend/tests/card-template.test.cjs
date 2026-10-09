@@ -85,3 +85,14 @@ test('delivery image contains one article without newsletter header or footer', 
     for (const marker of ['<header','오늘의 관심 뉴스','하루 한 번','news-template-disclaimer']) assert(!html.includes(marker));
   }
 });
+
+test('publisher feed scope is hidden in delivery image and web card', async () => {
+  const {renderCardTemplate, renderImageCard, cardTemplateFixture} = await ready;
+  const fixture = structuredClone(cardTemplateFixture);
+  fixture.sources[0].publisher = '매일경제 (전체)';
+  for (const html of [renderCardTemplate(fixture), renderImageCard(fixture, 1)]) {
+    assert(html.includes('매일경제 ·'));
+    assert(!html.includes('(전체)'));
+  }
+  assert.equal(fixture.sources[0].publisher, '매일경제 (전체)');
+});

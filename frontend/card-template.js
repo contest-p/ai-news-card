@@ -6,6 +6,7 @@
 const LABELS = { current: "오늘의 핵심", past: "배경 정보" };
 const safeText = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const count = (value) => [...String(value ?? "").normalize("NFKC")].length;
+const publisherLabel = (value) => String(value || '원문').replace(/\s*\(전체\)\s*$/, '').trim() || String(value);
 const formatDate = (value) => {
   if (!value) return "";
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -114,7 +115,7 @@ function oneCard(data, key, number, sources) {
   const sourceMarkup = cardSources.map(id => {
     const source = sources.get(id);
     if (!validSource(source)) throw new TypeError(`출처 URL이 올바르지 않습니다: ${id}`);
-    return `<a class="news-source-link" href="${safeText(source.url)}" target="_blank" rel="noopener noreferrer">${safeText(source.publisher || '원문')}${formatDate(source.published_at) ? ` · ${safeText(formatDate(source.published_at))} 보도` : ''}</a>`;
+    return `<a class="news-source-link" href="${safeText(source.url)}" target="_blank" rel="noopener noreferrer">${safeText(publisherLabel(source.publisher))}${formatDate(source.published_at) ? ` · ${safeText(formatDate(source.published_at))} 보도` : ''}</a>`;
   }).join('');
   return `<article class="news-template-card" data-card-number="${number}" data-card-layout="${kind}"><div class="news-template-top"><span class="news-template-label ${past ? 'past' : 'current'}">${label}</span><span class="news-template-ai">AI 생성</span></div><div class="news-card-hero"><h2>${safeText(number === 1 ? data.title : '과거 기사에서 확인한 배경')}</h2>${illustration(kind, number)}</div>${number === 1 && formatDate(data.published_at) ? `<p class="news-article-date">기사 게시 · ${safeText(formatDate(data.published_at))}</p>` : ''}${visual}${kind !== 'timeline' ? '<h3 class="news-explanation-title">핵심 내용</h3>' : ''}${sentences}${terms ? `<section class="news-terms"><h3>기사 속 용어</h3>${terms}</section>` : ''}<div class="news-template-sources">${sourceMarkup}</div></article>`;
 }

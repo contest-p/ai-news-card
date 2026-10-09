@@ -10,10 +10,10 @@ import re
 from urllib.parse import quote, urlsplit
 
 from engine.card_render import kst_time, validate_render_data
-from engine.cards import string
+from engine.cards import publisher_label, string
 from engine.selection import SelectionResult, canonical_url
 
-MAIL_TEMPLATE_VERSION = "briefing-mail-v5"
+MAIL_TEMPLATE_VERSION = "briefing-mail-v6-display-labels"
 PREVIEW_NOTICE = "로컬 검수용 메일입니다. 실제 구독·피드백 저장과 연결되지 않은 미리보기입니다."
 
 
@@ -111,7 +111,8 @@ def selection_label(reason):
         raise ValueError("SELECTION_REASON_INVALID")
     label = string(reason["label"], 120)
     if reason["type"] == "keyword":
-        label += " · " + string(reason["matched_keyword"], 20)
+        keyword = string(reason["matched_keyword"], 20)
+        label += " · " + ("AI" if keyword.casefold() == "ai" else keyword)
     return label
 
 
@@ -307,8 +308,8 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
             posted = kst_time(source["published_at"]).split(" ")[0]
             citations.append('<a href="' + escape(url, quote=True) + '" style="color:#5479ad;'
                              'font-size:12px;line-height:1.7;text-decoration:underline;">'
-                             + escape(source["publisher"]) + ' · ' + escape(posted) + ' 보도</a>')
-            plain.extend(["출처: " + source["publisher"] + " · " + posted + " 보도", url])
+                             + escape(publisher_label(source["publisher"])) + ' · ' + escape(posted) + ' 보도</a>')
+            plain.extend(["출처: " + publisher_label(source["publisher"]) + " · " + posted + " 보도", url])
         if number in images:
             # The PNG already contains the complete card. Do not repeat its body below it.
             sections.append(
