@@ -9,7 +9,7 @@ async function main() {
   const templateSource = fs.readFileSync(path.join(root, 'frontend/card-template.js'), 'utf8');
   const { renderCardTemplate } = await import('data:text/javascript;base64,' + Buffer.from(templateSource).toString('base64'));
   const markup = renderCardTemplate(input.data).replace(
-    /<article class="news-template-card" data-card-number="([12])">[\s\S]*?<\/article>/g,
+    /<article class="news-template-card" data-card-number="([12])"[^>]*>[\s\S]*?<\/article>/g,
     (html, number) => Number(number) === input.index ? html : '');
   const css = fs.readFileSync(path.join(root, 'frontend/styles.css'), 'utf8');
   if (/@import|url\(/i.test(css)) throw new Error('EXTERNAL_STYLES_NOT_ALLOWED');

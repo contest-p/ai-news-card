@@ -124,6 +124,19 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.run_job(run_id="run-2")["status"], "skipped")
         self.assertEqual(len(self.sent), 1)
 
+    def test_renderer_setup_failure_still_sends_verified_text(self):
+        def unavailable(data, job):
+            raise FileNotFoundError("FONT_OR_BROWSER_NOT_FOUND")
+        self.deps.render_images = unavailable
+        report = self.run_job()
+        self.assertEqual(report["status"], "sent")
+        self.assertIn("CARD_IMAGE_FAILED_TEXT_ONLY", report["issues"])
+        self.assertEqual(len(self.sent), 1)
+        plain, html = self.bodies(self.sent[0][0])
+        self.assertIn("핵심 뉴스", html)
+        self.assertNotIn("cid:", html)
+        self.assertNotIn("FONT_OR_BROWSER_NOT_FOUND", plain)
+
     def test_temporary_smtp_failure_resends_same_archived_message_up_to_three_attempts(self):
         temporary = SmtpOutcome("failed", True, "SMTP_REJECTED_TEMPORARY", 421)
         self.outcomes = [temporary, temporary, temporary]

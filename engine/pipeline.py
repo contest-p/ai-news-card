@@ -121,7 +121,11 @@ def build_news_or_no_news(job, token, context, deps, now, issues, check_limits):
     issues.extend(cards.issues)
     if cards.status != "ready" or cards.card_data is None:
         raise JobStop("failed", cards.error_code or "CARD_GENERATION_FAILED", retryable=cards.retryable)
-    images, image_issues = deps.render_images(cards.card_data, job)
+    try:
+        images, image_issues = deps.render_images(cards.card_data, job)
+    except Exception:
+        # Font/browser/setup failures must not prevent sending verified text.
+        images, image_issues = (), ["CARD_IMAGE_FAILED_TEXT_ONLY"]
     check_limits()
     issues.extend(image_issues)
     feedback_token = deps.gateway.issue_feedback_token(job.job_id)
