@@ -64,10 +64,12 @@ async function renderRoute() {
   }
   if (!session && CONFIG.firebase?.apiKey) await getSession();
   if (["setup", "privacy", "manage"].includes(pageFromPath()) && BASE) await loadCatalog();
-  if (["manage", "ended", "complete"].includes(pageFromPath()) && session) await refreshSubscription({preserveOnError:pageFromPath()==="complete"});
+  if (["setup", "privacy", "manage", "ended", "complete"].includes(pageFromPath()) && session) await refreshSubscription({preserveOnError:pageFromPath()==="complete"});
+  // 이미 활성 구독이 있으면 신규 구독 동의·설정 흐름 대신 현재 구독을 보여준다.
+  if (["/privacy", "/subscribe"].includes(currentPath()) && currentSubscription?.status === "active") history.replaceState({}, "", "/manage");
   // 구독 관리로 진입했을 때 구독이 없으면 동의 화면부터 안내한다.
   if (currentPath() === "/manage" && session && !currentSubscription?.status) history.replaceState({}, "", "/privacy");
-  if (currentPath() === path || currentPath() === "/privacy") render();
+  if (currentPath() === path || ["/privacy", "/manage"].includes(currentPath())) render();
 }
 const go = async (path) => { if (currentPath() === "/feedback" && path !== "/feedback") { feedbackEpoch++; feedbackLoading=false; feedbackSaving=false; feedbackToken = null; feedbackValid = false; feedbackDraft = { reasons: [], comment: "" }; chosenRating = null; } history.pushState({}, "", path); isMenuOpen = false; pageError = ""; await renderRoute(); window.scrollTo(0, 0); };
 const urlFor = (path) => path;
@@ -199,7 +201,7 @@ function wire(){
  document.querySelectorAll('input[name="reason"]').forEach(el=>el.addEventListener("change",()=>feedbackDraft.reasons=[...document.querySelectorAll('input[name="reason"]:checked')].map(input=>input.value)));
 document.querySelectorAll("[data-go]").forEach((el)=>el.addEventListener("click",(e)=>{e.preventDefault();go(el.dataset.go);}));document.querySelectorAll("[data-category]").forEach((el)=>el.addEventListener("click",()=>{const id=el.dataset.category;setup.categories=setup.categories.includes(id)?setup.categories.filter((x)=>x!==id):[...setup.categories,id];render();}));document.querySelectorAll("[data-duration]").forEach((el)=>el.addEventListener("click",()=>{setup.duration_days=Number(el.dataset.duration);render();}));document.querySelectorAll("[data-remove-keyword]").forEach((el)=>el.addEventListener("click",()=>{setup.keywords.splice(Number(el.dataset.removeKeyword),1);render();}));document.querySelectorAll("[data-manage-category]").forEach((el)=>el.addEventListener("click",()=>{const id=el.dataset.manageCategory;draftSettings.categories=draftSettings.categories.includes(id)?draftSettings.categories.filter((x)=>x!==id):[...draftSettings.categories,id];render();}));document.querySelectorAll("[data-remove-manage-keyword]").forEach((el)=>el.addEventListener("click",()=>{draftSettings.keywords.splice(Number(el.dataset.removeManageKeyword),1);render();}));document.querySelectorAll("[data-rating]").forEach((el)=>el.addEventListener("click",()=>chooseRating(el.dataset.rating)));document.querySelectorAll("[data-action]").forEach((el)=>el.addEventListener("click",()=>onAction(el.dataset.action)));document.querySelector("#consent")?.addEventListener("change",(e)=>{setup.consent=e.target.checked;setup.consented_version=e.target.checked?catalog.consent_version:null;const button=document.querySelector('[data-action="consent-next"]');if(button)button.disabled=!setup.consent || !catalog.consent_version;});document.querySelector("#delivery-hour")?.addEventListener("change",(e)=>setup.delivery_hour_kst=Number(e.target.value));document.querySelector("#manage-hour")?.addEventListener("change",(e)=>draftSettings.delivery_hour_kst=Number(e.target.value));}
 
-async function onAction(action){if(action==="menu"){isMenuOpen=!isMenuOpen;render();return;}if(action==="start"){if(session){go("/privacy");return;}go("/login");return;}if(action==="auth"){if(session){try{await firebaseAuth.signOut();session=null;currentSubscription=null;draftSettings=null;toast("로그아웃했어요.");await go("/");}catch{toast("로그아웃하지 못했습니다.");}}else go("/login");return;}if(action==="google-login"){
+async function onAction(action){if(action==="menu"){isMenuOpen=!isMenuOpen;render();return;}if(action==="start"){if(session){await refreshSubscription();await go(currentSubscription?.status==="active"?"/manage":"/privacy");return;}go("/login");return;}if(action==="auth"){if(session){try{await firebaseAuth.signOut();session=null;currentSubscription=null;draftSettings=null;toast("로그아웃했어요.");await go("/");}catch{toast("로그아웃하지 못했습니다.");}}else go("/login");return;}if(action==="google-login"){
   if(loginPending)return;
   loginPending=true;render();
   try {
