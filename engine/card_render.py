@@ -16,7 +16,7 @@ from engine.selection import KST, canonical_url, parse_timestamp
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "frontend" / "card-template.js"
 TEMPLATE_STYLE = ROOT / "frontend" / "styles.css"
-TEMPLATE_VERSION = "frontend-fixed-layouts-v2"
+TEMPLATE_VERSION = "article-only-layouts-v3"
 # CARD_FONT_PATH가 없을 때 찾는 한글 TTF/OTF. 프로젝트 폰트를 우선 사용하며 OS 폰트는 로컬 대체 후보다.
 FONT_CANDIDATES = (
     ROOT / "frontend/assets/fonts/NanumGothic-Regular.ttf",

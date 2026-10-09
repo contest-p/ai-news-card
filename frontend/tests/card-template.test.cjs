@@ -74,3 +74,14 @@ test('story keeps all text and fixed artwork without external image dependencies
   assert(!html.includes('<img'));
   assert(!html.includes('<script'));
 });
+
+test('delivery image contains one article without newsletter header or footer', async () => {
+  const {renderImageCard,cardTemplateMaxFixture:data} = await ready;
+  for (const number of [1,2]) {
+    const html = renderImageCard(data,number);
+    assert.equal((html.match(/<article /g)||[]).length,1);
+    assert(html.includes(`data-card-number="${number}"`));
+    assert(html.includes(data[`card${number}`].sentences[0].text));
+    for (const marker of ['<header','오늘의 관심 뉴스','하루 한 번','news-template-disclaimer']) assert(!html.includes(marker));
+  }
+});

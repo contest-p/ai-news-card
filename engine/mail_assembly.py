@@ -13,7 +13,7 @@ from engine.card_render import kst_time, validate_render_data
 from engine.cards import string
 from engine.selection import SelectionResult, canonical_url
 
-MAIL_TEMPLATE_VERSION = "briefing-mail-v4"
+MAIL_TEMPLATE_VERSION = "briefing-mail-v5"
 PREVIEW_NOTICE = "로컬 검수용 메일입니다. 실제 구독·피드백 저장과 연결되지 않은 미리보기입니다."
 
 
@@ -256,7 +256,7 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
         image_html = ""
         if number in images:
             image_html = (f'<tr><td style="padding:0 0 16px;"><img src="cid:{images[number].content_id}" width="552" '
-                          f'alt="{escape(label + ": " + title + ". 전체 설명과 출처는 아래 텍스트로도 읽을 수 있습니다.", quote=True)}" '
+                          f'alt="{escape(label + ": " + title + ". " + " ".join(lines), quote=True)}" '
                           'style="display:block;width:100%;max-width:552px;height:auto;border:0;outline:none;'
                           'text-decoration:none;margin:0 auto;"></td></tr>')
         card_heading = ""
@@ -309,6 +309,14 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
                              'font-size:12px;line-height:1.7;text-decoration:underline;">'
                              + escape(source["publisher"]) + ' · ' + escape(posted) + ' 보도</a>')
             plain.extend(["출처: " + source["publisher"] + " · " + posted + " 보도", url])
+        if number in images:
+            # The PNG already contains the complete card. Do not repeat its body below it.
+            sections.append(
+                '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" '
+                'style="margin:14px 0 18px;">' + image_html +
+                '<tr><td style="padding:0 4px;font-size:12px;line-height:1.7;">'
+                + ' &nbsp;·&nbsp; '.join(citations) + '</td></tr></table>')
+            continue
         sections.append(
             '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" '
             'style="margin:0 0 16px;border:1px solid #e8ebef;border-radius:14px;background:#ffffff;">'

@@ -7,10 +7,8 @@ async function main() {
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
   if (![1, 2].includes(input.index)) throw new Error('CARD_INDEX_INVALID');
   const templateSource = fs.readFileSync(path.join(root, 'frontend/card-template.js'), 'utf8');
-  const { renderCardTemplate } = await import('data:text/javascript;base64,' + Buffer.from(templateSource).toString('base64'));
-  const markup = renderCardTemplate(input.data).replace(
-    /<article class="news-template-card" data-card-number="([12])"[^>]*>[\s\S]*?<\/article>/g,
-    (html, number) => Number(number) === input.index ? html : '');
+  const { renderImageCard } = await import('data:text/javascript;base64,' + Buffer.from(templateSource).toString('base64'));
+  const markup = renderImageCard(input.data, input.index);
   const css = fs.readFileSync(path.join(root, 'frontend/styles.css'), 'utf8');
   if (/@import|url\(/i.test(css)) throw new Error('EXTERNAL_STYLES_NOT_ALLOWED');
   if (!/^[A-Za-z0-9+/=]+$/.test(input.font_base64)) throw new Error('FONT_REQUIRED');
