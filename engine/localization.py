@@ -91,7 +91,8 @@ def korean_card(data, *, source_key, client, store, model, base_url):
             output = apply_translation(data, draft)
         except ChatFailure as exc:
             retryable = exc.code in {"CHAT_HTTP_429", "CHAT_HTTP_500", "CHAT_HTTP_502",
-                                    "CHAT_HTTP_503", "CHAT_HTTP_504", "CHAT_RESPONSE_INVALID"}
+                                    "CHAT_HTTP_503", "CHAT_HTTP_504", "CHAT_RESPONSE_INVALID",
+                                    "CHAT_RESPONSE_EMPTY", "CHAT_DRAFT_JSON_INVALID"}
             state.update(status="retryable" if retryable else "blocked", error_code=exc.code)
         except (ValueError, TypeError, KeyError):
             retryable = True
