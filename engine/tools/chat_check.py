@@ -59,8 +59,32 @@ def check_failed_job(settings):
             with tempfile.TemporaryDirectory() as directory:
                 korean_card(result.card_data, source_key="diagnostic", client=CodysseyChatClient(settings),
                             store=LocalGenerationStore(directory), model=settings.model, base_url=settings.base_url)
-        return {"stage": "failed_job", "status": result.status, "issues": list(result.issues),
-                "message_submitted": False}
+        report = {"stage": "failed_job", "status": result.status, "issues": list(result.issues),
+                  "message_submitted": False}
+        if result.status != "ready_for_review":
+            from engine.cards import normalized, NUMBER, quantity_matches, repair_numeric_format
+            try:
+                corrected, _ = repair_numeric_format(draft, current)
+            except Exception:
+                corrected = draft
+            counts = {}
+            for sentence in draft.get("card1", {}).get("sentences", []):
+                quote = sentence.get("evidence_quote", "")
+                for number in sentence.get("numbers", []):
+                    flags = {
+                        "source_mismatch": number.get("source_article_id") != sentence.get("source_article_id"),
+                        "quote_mismatch": number.get("evidence_quote") != quote,
+                        "quote_not_subset": number.get("evidence_quote", "") not in quote,
+                        "subject_not_in_quote": number.get("subject", "") not in quote,
+                        "surface_not_numeric": NUMBER.fullmatch(str(number.get("surface", ""))) is None,
+                        "surface_not_in_quote": str(number.get("surface", "")) not in quote,
+                        "date_mismatch": number.get("as_of") != sentence.get("as_of"),
+                    }
+                    for key, value in flags.items():
+                        if value:
+                            counts[key] = counts.get(key, 0) + 1
+            report["numeric_issue_counts"] = counts
+        return report
     finally:
         db.close()
 
