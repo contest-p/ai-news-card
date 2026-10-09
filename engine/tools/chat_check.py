@@ -52,6 +52,13 @@ def check_failed_job(settings):
         repaired = repair_format(draft, current, rag, publishers, day) if result.status != "ready_for_review" else None
         if repaired:
             result = repaired[0]
+        if result.status == "ready_for_review":
+            import tempfile
+            from engine.generation import LocalGenerationStore
+            from engine.localization import korean_card
+            with tempfile.TemporaryDirectory() as directory:
+                korean_card(result.card_data, source_key="diagnostic", client=CodysseyChatClient(settings),
+                            store=LocalGenerationStore(directory), model=settings.model, base_url=settings.base_url)
         return {"stage": "failed_job", "status": result.status, "issues": list(result.issues),
                 "message_submitted": False}
     finally:
