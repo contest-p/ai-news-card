@@ -32,7 +32,10 @@ async function main() {
         fontLoaded: document.fonts.check('31px CardKorean'),
         minimumTextPx: 2 * Math.min(...[...card.querySelectorAll('h1,p,a,.news-template-label,.news-template-ai')].map(el => parseFloat(getComputedStyle(el).fontSize))) };
     });
-    if (layout.overflow.length || !layout.fontLoaded || requests.length) throw new Error('LAYOUT_FONT_OR_NETWORK_CHECK_FAILED');
+    if (layout.overflow.length || !layout.fontLoaded || requests.length) {
+      process.stderr.write(JSON.stringify({ ...layout, externalRequests: requests.length }) + '\n');
+      throw new Error('LAYOUT_FONT_OR_NETWORK_CHECK_FAILED');
+    }
     await page.locator('.news-template').screenshot({ path: pngPath, type: 'png' });
     const bytes = fs.readFileSync(pngPath);
     process.stdout.write(JSON.stringify({ ...layout, bytes: bytes.length,
