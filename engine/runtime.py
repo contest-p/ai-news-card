@@ -21,6 +21,7 @@ from engine.mail_assembly import WebMailLinks
 from engine.pipeline import PipelineDeps, CardOutcome
 from engine.settings import load_chat_settings
 from engine.smtp_sender import load_smtp_account, send_message
+from engine.preview import PreviewGateway, PreviewJobStore
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,17 +36,22 @@ def int_setting(name, default, minimum, maximum):
 def run_connected(client, *, gateway=None, sender=None, smtp=None, encoder=None,
                   text_only=False, test=False, jobs_wrapper=None,
                   delivery_at=None,
+                  preview_subscription_id=None,
                   clock=lambda: datetime.now(timezone.utc)):
     """Explicitly invoked by a CLI; test adapters retain recipient restrictions."""
     smtp = smtp or load_smtp_account()
     chat = load_chat_settings()
     gateway = gateway or HttpEngineGateway(os.environ.get("ENGINE_API_BASE_URL", ""),
                                            os.environ.get("ENGINE_API_TOKEN", ""))
+    if preview_subscription_id:
+        gateway = PreviewGateway(gateway, preview_subscription_id)
     repository = FirestoreArticleRepository(client)
     rag = FirestoreRagStore(repository, encoder or LazyE5Encoder(),
                            min_score=float(os.environ.get("ENGINE_RAG_MIN_SCORE", "0.85")), clock=clock)
     prefix = "engine_test_" if test else "engine_"
     jobs = FirestoreJobStore(client, collection_name=prefix + "delivery_jobs")
+    if preview_subscription_id:
+        jobs = PreviewJobStore(jobs, preview_subscription_id)
     archive = FirestoreMailArchive(client, retention=timedelta(days=int_setting(
         "ENGINE_ARCHIVE_RETENTION_DAYS", 0, 1, 30)), collection_name=prefix + "mail_archives", clock=clock)
     generation = FirestoreGenerationStore(client, collection_name=prefix + "generation_jobs", clock=clock)
@@ -114,7 +120,7 @@ def run_connected(client, *, gateway=None, sender=None, smtp=None, encoder=None,
         cleanup_stats["expired_archives_deleted"] = archive.delete_expired(now)
         # Backend remains responsible for user, subscription, feedback and Auth deletion.
         gateway.privacy_cleanup(now)
-    summary = run_batch(deps=deps, collect=collect, privacy_cleanup=None if test else cleanup,
+    summary = run_batch(deps=deps, collect=collect, privacy_cleanup=None if test or preview_subscription_id else cleanup,
                         delivery_at=delivery_at)
     summary.update(embedding=stats, cleanup=cleanup_stats, card_jobs_attempted=generated,
                    test_only=test, delivery_confirmed=False)

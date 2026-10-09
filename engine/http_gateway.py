@@ -27,7 +27,7 @@ def validate_snapshot(data, kind):
         if not isinstance(data.get(field), str) or not data[field].strip():
             raise ValueError("SNAPSHOT_IDENTITY_INVALID")
     email_address(data["recipient_email"])
-    if kind == "daily_briefing":
+    if kind in {"daily_briefing", "subscription_preview"}:
         if data.get("status") != "active":
             raise ValueError("SNAPSHOT_NOT_ACTIVE")
         categories, keywords = data.get("categories"), data.get("keywords")
@@ -89,6 +89,21 @@ class HttpEngineGateway:
     def list_expired_subscriptions(self, now):
         rows = self.request("/subscriptions/expired", query={"now": now.isoformat()})["subscriptions"]
         return self.validate_list(rows, "subscription_end")
+
+    def list_preview_subscriptions(self, now, *, subscription_id=None):
+        query = {"now": now.isoformat()}
+        if subscription_id:
+            query["subscription_id"] = subscription_id
+        rows = self.request("/subscriptions/previews", query=query)["subscriptions"]
+        snapshots = self.validate_list(rows, "subscription_preview")
+        if subscription_id and any(row["subscription_id"] != subscription_id for row in snapshots):
+            raise GatewayUnavailable("BACKEND_PREVIEW_IDENTITY_MISMATCH")
+        return snapshots
+
+    def check_preview_eligibility(self, subscription_id, now):
+        result = self.request("/subscriptions/" + quote(subscription_id, safe="") + "/eligibility",
+                              query={"now": now.isoformat(), "preview": "true"})
+        return Eligibility(result["eligible"], result["reason"])
 
     @staticmethod
     def validate_list(rows, kind):

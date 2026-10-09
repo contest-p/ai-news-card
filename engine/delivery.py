@@ -17,7 +17,7 @@ import uuid
 from engine.selection import KST, DeliveryHistory, aware_utc, parse_timestamp
 
 JOB_SCHEMA = "delivery-job-v1-proposal"
-MAIL_KINDS = frozenset({"daily_briefing", "subscription_end"})
+MAIL_KINDS = frozenset({"daily_briefing", "subscription_end", "subscription_preview"})
 STATUSES = frozenset({"pending", "processing", "sending", "sent", "failed", "unknown",
                       "skipped_late", "cancelled"})
 # 공통 PRD 10-4 상태도. processing→processing은 선점 유지 중 필드 기록용이다.
@@ -111,6 +111,13 @@ def new_job(snapshot: dict, mail_kind: str) -> DeliveryJob:
         day = end
         scheduled = kst_midnight(end)
         deadline = scheduled + END_NOTICE_WINDOW
+    elif mail_kind == "subscription_preview":
+        day = date.fromisoformat(snapshot["scheduled_date_kst"])
+        scheduled = parse_timestamp(snapshot["scheduled_at"])
+        if scheduled.astimezone(KST).date() != day:
+            raise ValueError("SCHEDULED_DATE_INVALID")
+        deadline = min(parse_timestamp(snapshot["deadline_at"]), scheduled + timedelta(hours=24),
+                       kst_midnight(end))
     else:
         raise ValueError("MAIL_KIND_INVALID")
     if deadline <= scheduled:

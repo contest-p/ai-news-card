@@ -41,16 +41,23 @@ def main():
     parser.add_argument("--text-only", action="store_true")
     parser.add_argument("--safe-log", action="store_true", help="작업별 식별자·상세 결과 없이 집계만 출력")
     parser.add_argument("--delivery-at", default="", help="대상 조회를 시작할 절대 시각(예: 2026-10-10T08:00:00+09:00)")
+    parser.add_argument("--preview-subscription-id", default="", help="해당 구독의 첫 미리보기만 발송")
     args = parser.parse_args()
     client = None
     try:
         delivery_at = parse_delivery_at(args.delivery_at)
+        if args.preview_subscription_id:
+            from engine.preview import PreviewGateway
+            PreviewGateway(None, args.preview_subscription_id)
+            if delivery_at is not None:
+                raise ValueError("PREVIEW_MUST_RUN_IMMEDIATELY")
         report = preflight(args.project, args.credentials, test=False)
         if args.check or report["missing_configuration"]:
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return 1 if report["missing_configuration"] else 0
         client = create_client(args.project, args.credentials)
-        result = run_connected(client, text_only=args.text_only, delivery_at=delivery_at)
+        result = run_connected(client, text_only=args.text_only, delivery_at=delivery_at,
+                               preview_subscription_id=args.preview_subscription_id or None)
         print(json.dumps(log_summary(result) if args.safe_log else result, ensure_ascii=False, indent=2))
         bad = {"failed", "unknown", "crashed", "claim_lost"}
         return int(bool(result["errors"]) or any(result["jobs"]["by_status"].get(s, 0) for s in bad))

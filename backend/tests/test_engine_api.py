@@ -97,6 +97,8 @@ class EngineApiTests(unittest.TestCase):
         self.service = EngineService(self.db, clock=lambda:self.now)
         self.patch = patch("google.cloud.firestore.transactional", side_effect=transactional)
         self.patch.start(); self.addCleanup(self.patch.stop)
+        main_transactions = patch("firebase_admin.firestore.transactional", side_effect=transactional)
+        main_transactions.start(); self.addCleanup(main_transactions.stop)
         self.env = patch.dict(os.environ, {"ENGINE_API_TOKEN":"a"*48,"FEEDBACK_TOKEN_SECRET":"b"*48,"PUBLIC_CATEGORIES":"economy,it_science,politics,society,world,culture"})
         self.env.start(); self.addCleanup(self.env.stop)
         app = FastAPI(); app.include_router(create_router(lambda:self.db))

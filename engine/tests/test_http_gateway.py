@@ -19,6 +19,15 @@ class Response(io.BytesIO):
 
 
 class GatewayTests(unittest.TestCase):
+    def test_preview_api_and_eligibility_before_regular_start(self):
+        self.response({"subscriptions": [self.snapshot]})
+        rows = self.gateway.list_preview_subscriptions(self.now, subscription_id=self.snapshot["subscription_id"])
+        self.assertEqual(rows, [self.snapshot])
+        self.assertIn("/subscriptions/previews?", self.opener.open.call_args.args[0].full_url)
+        self.response({"eligible": True, "reason": "active"})
+        self.assertTrue(self.gateway.check_preview_eligibility(self.snapshot["subscription_id"], self.now).eligible)
+        self.assertIn("preview=true", self.opener.open.call_args.args[0].full_url)
+
     def setUp(self):
         self.opener = Mock()
         self.gateway = HttpEngineGateway("https://backend.example/api/v1/engine", "TEST_SECRET",

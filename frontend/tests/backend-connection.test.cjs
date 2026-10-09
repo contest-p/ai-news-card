@@ -33,7 +33,7 @@ function harness(respond) {
     catalog = { categories: ['economy'], consent_version: 'v1', capabilities: {} };
     setup = { consent: true, categories: ['economy'], keywords: ['AI'], delivery_hour_kst: 9, duration_days: 14 };
     currentSubscription = normalizeSubscription(${JSON.stringify(subscription)});
-    globalThis.actions = { api, createSubscription, refreshSubscription, cancelSubscription, saveSettings, requestDeletion, reloadDeletion, consumeFeedbackToken, submitFeedback, chooseRating, normalizeSubscription, getSession, onAction, openCancelModal, wire, addKeyword, endedPage, resolveFeedback, renderRoute, managePage, accountPage, feedbackPage, loadCatalog, setupPage };
+    globalThis.actions = { api, createSubscription, refreshSubscription, cancelSubscription, saveSettings, requestDeletion, reloadDeletion, consumeFeedbackToken, submitFeedback, chooseRating, normalizeSubscription, getSession, onAction, openCancelModal, wire, addKeyword, endedPage, resolveFeedback, renderRoute, managePage, accountPage, feedbackPage, loadCatalog, setupPage, subscriptionPreviewNotice };
     globalThis.state = () => ({ subscription: currentSubscription, error: pageError, setup, draftSettings, deletionRequest, feedbackToken, feedbackValid, feedbackError, feedbackDraft, chosenRating, feedbackSubmitted });
     globalThis.switchAccount = (uid) => { session = { user: { uid } }; };
   `, context);
@@ -42,6 +42,15 @@ function harness(respond) {
 
 const subscription = { status: 'active', uid: 'user-1', subscription_id: 'period-id', categories: ['economy'],
   keywords: ['AI'], delivery_hour_kst: 10, duration_days: 14, settings_version: 1, start_date: '2026-10-08', end_date_exclusive: '2026-10-22' };
+
+test('preview completion distinguishes preparation from delayed dispatch without claiming delivery', () => {
+  const h = harness(async () => ({body:{subscription}}));
+  const sub = h.context.actions.normalizeSubscription({subscription:{...subscription,preview_requested_at:'2026-10-07T10:00:00Z',preview_dispatch_status:'pending'},preview_dispatch_status:'accepted'});
+  assert.match(h.context.actions.subscriptionPreviewNotice(sub), /몇 분/);
+  assert.doesNotMatch(h.context.actions.subscriptionPreviewNotice(sub), /발송 완료/);
+  assert.match(h.context.actions.subscriptionPreviewNotice({...sub,preview_dispatch_status:'failed'}), /구독은 정상적으로 저장/);
+  assert.equal(h.context.actions.subscriptionPreviewNotice(subscription), '');
+});
 
 test('subscription form syncs user, saves engine fields and reads actual backend routes', async () => {
   const h = harness(async () => ({ body: { subscription } }));

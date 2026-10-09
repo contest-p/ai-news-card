@@ -23,8 +23,10 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 
 try:
     from .engine_api import SubscriptionSettings, create_router, instant, deleted, effective_settings, public_categories, account_fence
+    from .preview_mail import dispatch_preview
 except ImportError:
     from engine_api import SubscriptionSettings, create_router, instant, deleted, effective_settings, public_categories, account_fence
+    from preview_mail import dispatch_preview
 
 # --------------------------------------------------
 # 환경변수 로드
@@ -468,6 +470,9 @@ def save_subscription(
         data["effective_date"] = data["start_date"]
         data["settings_versions"] = [{**settings.model_dump(), "settings_version": 1,
                                       "effective_date": data["start_date"]}]
+        data["preview_requested_at"] = now
+        data["preview_settings"] = settings.model_dump()
+        data["preview_dispatch_status"] = "pending"
         # Retain previous identity independently, so a new subscription cannot erase its retention deadline.
         if previous.get("subscription_id"):
             previous["snapshot_parent_id"] = uid
@@ -481,10 +486,15 @@ def save_subscription(
         return data
 
     subscription_data = save(db.transaction())
+    try:
+        preview_dispatch = dispatch_preview(db, ref, subscription_data["subscription_id"])
+    except Exception:
+        preview_dispatch = "failed"
     return {
         "message": "구독이 저장되었습니다.",
         "subscription_id": subscription_data["subscription_id"],
         "subscription": subscription_response(subscription_data),
+        "preview_dispatch_status": preview_dispatch,
     }
 
 

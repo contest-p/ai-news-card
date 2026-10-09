@@ -16,13 +16,18 @@ on:
         required: false
         type: string
         default: ''
+      preview_subscription_id:
+        description: '구독 직후 미리보기 발송 대상 ID. 빈 값은 전체 정기 배치'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: engine-mail-production
+  group: ${{ inputs.preview_subscription_id && format('engine-preview-{0}', inputs.preview_subscription_id) || 'engine-mail-production' }}
   cancel-in-progress: false
 
 jobs:
@@ -99,6 +104,7 @@ jobs:
         if: github.event_name == 'schedule' || inputs.mode == 'run'
         env:
           DELIVERY_AT: ${{ steps.delivery_target.outputs.delivery_at }}
+          PREVIEW_SUBSCRIPTION_ID: ${{ inputs.preview_subscription_id }}
           ENGINE_FIREBASE_PROJECT: ${{ vars.ENGINE_FIREBASE_PROJECT || 'ai-news-card' }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           ENGINE_API_BASE_URL: ${{ vars.ENGINE_API_BASE_URL }}
@@ -117,4 +123,4 @@ jobs:
           ENGINE_MAX_CARD_JOBS_PER_BATCH: ${{ vars.ENGINE_MAX_CARD_JOBS_PER_BATCH || '10' }}
           CARD_FONT_PATH: /usr/share/fonts/truetype/nanum/NanumGothic.ttf
           TOKENIZERS_PARALLELISM: 'false'
-        run: python -B -m engine.tools.run_batch --run --safe-log --project "$ENGINE_FIREBASE_PROJECT" --delivery-at "$DELIVERY_AT"
+        run: python -B -m engine.tools.run_batch --run --safe-log --project "$ENGINE_FIREBASE_PROJECT" --delivery-at "$DELIVERY_AT" --preview-subscription-id "$PREVIEW_SUBSCRIPTION_ID"

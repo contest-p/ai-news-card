@@ -12,7 +12,7 @@ from engine.gateway import Eligibility
 from engine.mail_archive import InMemoryMailArchive
 from engine.mail_assembly import WebMailLinks
 from engine.pipeline import CardOutcome, DailyContext, PipelineDeps, process_job
-from engine.selection import Article, parse_timestamp
+from engine.selection import Article, parse_timestamp, KST
 from engine.smtp_sender import SmtpOutcome
 from engine.tests import test_cards
 
@@ -54,6 +54,26 @@ def card_data_for(article):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_subscription_preview_sends_before_regular_start_and_is_not_resent(self):
+        tomorrow = self.clock.now.astimezone(KST).date() + timedelta(days=1)
+        snapshot = {**SNAPSHOT, "start_date": tomorrow.isoformat(),
+                    "end_date_exclusive": (tomorrow + timedelta(days=7)).isoformat(),
+                    "scheduled_at": self.clock.now.isoformat(),
+                    "deadline_at": (self.clock.now + timedelta(hours=24)).isoformat(),
+                    "delivery_hour_kst": 8}
+        job = self.jobs.create_if_absent(new_job(snapshot, "subscription_preview"))
+        self.gateway.check_preview_eligibility = self.gateway.check_delivery_eligibility
+        report = self.run_job(job)
+        self.assertEqual(report["status"], "sent")
+        message, _ = self.sent[0]
+        plain, html = self.bodies(message)
+        self.assertIn("[구독 완료]", str(message["Subject"]))
+        self.assertIn("오전 8시", plain)
+        self.assertIn("첫 미리보기", html)
+        self.assertEqual(self.jobs.get(job.job_id).mail_kind, "subscription_preview")
+        self.assertEqual(self.run_job(job)["status"], "skipped")
+        self.assertEqual(len(self.sent), 1)
+
     def setUp(self):
         self.gateway = FakeGateway()
         self.jobs = InMemoryJobStore()

@@ -76,6 +76,7 @@ class RuntimeTests(unittest.TestCase):
                    'start_date': '2026-10-11', 'end_date_exclusive': '2026-10-18'}
         gateway = Mock()
         gateway.list_due_subscriptions.return_value = [SNAPSHOT]
+        gateway.list_preview_subscriptions.return_value = []
         gateway.list_expired_subscriptions.return_value = [expired]
         gateway.check_delivery_eligibility.side_effect = lambda identity, now: Eligibility(
             identity != 'expired-fixture', 'expired' if identity == 'expired-fixture' else 'active')
@@ -115,6 +116,20 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(second['jobs']['total'], 0)
             self.assertEqual(len(submitted), 2)
             self.assertEqual(chat.complete.call_count, 1)
+            identity = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+            preview = {**SNAPSHOT, 'subscription_id': identity, 'delivery_hour_kst': 8,
+                'start_date': '2026-10-19', 'end_date_exclusive': '2026-10-26',
+                'scheduled_at': NOW.isoformat(), 'deadline_at': (NOW + timedelta(hours=24)).isoformat()}
+            gateway.list_preview_subscriptions.return_value = [preview]
+            gateway.check_preview_eligibility.return_value = Eligibility(True, 'active')
+            cleanup_calls = gateway.privacy_cleanup.call_count
+            third = run_connected(db, preview_subscription_id=identity, **options)
+            self.assertEqual(third['jobs']['by_status'], {'sent': 1})
+            self.assertEqual(gateway.privacy_cleanup.call_count, cleanup_calls)
+            self.assertIn('[구독 완료]', str(submitted[-1]['Subject']))
+            fourth = run_connected(db, preview_subscription_id=identity, **options)
+            self.assertEqual(fourth['jobs']['total'], 0)
+            self.assertEqual(len(submitted), 3)
             audits = [data for path, data in db.data.items() if path.startswith('engine_rag_results/')]
             self.assertEqual(audits[0]['used_article_ids'], ['past'])
 

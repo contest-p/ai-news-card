@@ -134,7 +134,7 @@ class EngineService:
         # Missing user records are not authorized for delivery.
         return not user.exists or deleted(user.to_dict())
 
-    def eligibility(self, subscription_id, now):
+    def eligibility(self, subscription_id, now, *, preview=False):
         now = utc(now)
         try:
             _, data = self.read(subscription_id)
@@ -152,8 +152,56 @@ class EngineService:
             return {"eligible": False, "reason": "not_found"}
         if now >= instant(end):
             return {"eligible": False, "reason": "expired"}
-        active = data.get("status") == "active" and now >= instant(start)
+        active = data.get("status") == "active" and (now >= instant(start) or (
+            preview and isinstance(data.get("preview_requested_at"), datetime)
+            and data["preview_requested_at"] <= now < data["preview_requested_at"] + timedelta(hours=24)))
         return {"eligible": active, "reason": "active" if active else "not_found"}
+
+    def preview_snapshot(self, subscription_id, now):
+        now = utc(now)
+        _, data = self.read(subscription_id)
+        if not self.eligibility(subscription_id, now, preview=True)["eligible"]:
+            raise HTTPException(409, "PREVIEW_INELIGIBLE")
+        try:
+            requested = utc(data["preview_requested_at"])
+            start, end = dates(data)
+            settings = SubscriptionSettings.model_validate(data["preview_settings"])
+            if not requested <= now < requested + timedelta(hours=24):
+                raise ValueError()
+            if settings.duration_days != (end - start).days:
+                raise ValueError()
+            email = data["email"]
+            if not re.fullmatch(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+", email):
+                raise ValueError()
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(409, "PREVIEW_SETTINGS_INVALID") from None
+        return {"subscription_id": subscription_id, "user_id": data["uid"], "recipient_email": email,
+                "timezone": "Asia/Seoul", "status": "active", "contract_version": "1.0",
+                "settings_version": 1, "categories": settings.categories, "keywords": settings.keywords,
+                "delivery_hour_kst": settings.delivery_hour_kst, "first_delivery_date": start.isoformat(),
+                "start_date": start.isoformat(), "end_date_exclusive": end.isoformat(),
+                "scheduled_date_kst": requested.astimezone(KST).date().isoformat(),
+                "scheduled_at": requested.isoformat(),
+                "deadline_at": min(requested + timedelta(hours=24), instant(end)).isoformat()}
+
+    def list_previews(self, now, *, subscription_id=None):
+        query = self.subscriptions.where(filter=FieldFilter(
+            "subscription_id" if subscription_id else "status", "==",
+            subscription_id if subscription_id else "active"))
+        docs = list(query.limit(1001).stream(timeout=20))
+        if len(docs) > 1000:
+            raise HTTPException(503, "SUBSCRIPTION_QUERY_LIMIT_EXCEEDED")
+        rows = []
+        for doc in docs:
+            data = doc.to_dict()
+            if not data.get("preview_requested_at"):
+                continue
+            try:
+                rows.append(self.preview_snapshot(data.get("subscription_id", doc.id), now))
+            except HTTPException as error:
+                if error.status_code != 409:
+                    raise
+        return {"subscriptions": rows}
 
     def snapshot(self, subscription_id, day, *, kind="daily_briefing"):
         ref, data = self.read(subscription_id)
@@ -264,7 +312,7 @@ class EngineService:
             if len(found) != 1:
                 raise HTTPException(404 if not found else 409, "DELIVERY_JOB_NOT_UNIQUE")
             job = found[0]
-            if job.get("mail_kind") != "daily_briefing" or job.get("status") not in {"processing", "sending", "sent"} or not job.get("selected_article_id"):
+            if job.get("mail_kind") not in {"daily_briefing", "subscription_preview"} or job.get("status") not in {"processing", "sending", "sent"} or not job.get("selected_article_id"):
                 raise HTTPException(409, "DELIVERY_JOB_NOT_READY")
             uid = job.get("user_id")
             if not isinstance(uid, str) or not uid or "/" in uid:
@@ -317,6 +365,9 @@ def create_router(get_db):
     @router.get("/subscriptions/due")
     def due(now: datetime | None = None, subscription_id: str | None = None):
         return service().list_snapshots(now or datetime.now(timezone.utc), subscription_id=subscription_id)
+    @router.get("/subscriptions/previews")
+    def previews(now: datetime | None = None, subscription_id: str | None = None):
+        return service().list_previews(now or datetime.now(timezone.utc), subscription_id=subscription_id)
     @router.get("/subscriptions/expired")
     def expired(now: datetime | None = None):
         return service().list_snapshots(now or datetime.now(timezone.utc), expired=True)
@@ -324,8 +375,8 @@ def create_router(get_db):
     def snapshot(subscription_id: str, scheduled_date_kst: date):
         return {"subscription": service().snapshot(subscription_id, scheduled_date_kst)}
     @router.get("/subscriptions/{subscription_id}/eligibility")
-    def eligibility(subscription_id: str, now: datetime | None = None):
-        return service().eligibility(subscription_id, now or datetime.now(timezone.utc))
+    def eligibility(subscription_id: str, now: datetime | None = None, preview: bool = False):
+        return service().eligibility(subscription_id, now or datetime.now(timezone.utc), preview=preview)
     @router.post("/feedback-tokens")
     def token(body: FeedbackTokenRequest, idempotency_key: str = Header(default="")):
         return service().feedback_token(body.job_id, idempotency_key, environment=body.environment)

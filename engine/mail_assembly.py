@@ -13,7 +13,7 @@ from engine.card_render import kst_time, validate_render_data
 from engine.cards import string
 from engine.selection import SelectionResult, canonical_url
 
-MAIL_TEMPLATE_VERSION = "briefing-mail-v3"
+MAIL_TEMPLATE_VERSION = "briefing-mail-v4"
 PREVIEW_NOTICE = "로컬 검수용 메일입니다. 실제 구독·피드백 저장과 연결되지 않은 미리보기입니다."
 
 
@@ -67,6 +67,7 @@ class NewsMailData:
     feedback_token: str | None = field(default=None, repr=False)
     # True=로컬 검수(안내 문구 포함), False=실제 발송용. 기본값 없이 반드시 명시한다.
     preview: bool | None = None
+    welcome_notice: str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ class NoNewsMailData:
     selection_result: SelectionResult
     # True=로컬 검수(안내 문구 포함), False=실제 발송용. 기본값 없이 반드시 명시한다.
     preview: bool | None = None
+    welcome_notice: str | None = None
 
 
 @dataclass(frozen=True)
@@ -235,9 +237,13 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
     current_url = https_url(current_source["url"])
     current_published = kst_time(data.card_data["published_at"])
     subject = f"[뉴스 브리핑] {day} · 오늘의 관심 뉴스"
+    if data.welcome_notice:
+        subject = "[구독 완료] 첫 뉴스 브리핑 미리보기"
     plain = ["오늘의 관심 뉴스", f"{day} · 하루 한 번, 한눈에 읽는 브리핑", "",
              title, "기사 게시: " + current_published, "선택 이유: " + reason,
              "AI 생성 · 원문을 함께 확인해 주세요.", ""]
+    if data.welcome_notice:
+        plain.insert(0, data.welcome_notice + "\n")
     sections = []
     source_rows = {row["article_id"]: row for row in data.card_data["sources"]}
     for number, card in enumerate((data.card_data["card1"], data.card_data["card2"]), 1):
@@ -347,6 +353,8 @@ def assemble_mail(data: NewsMailData | NoNewsMailData | EndNoticeMailData):
     notice_html = ('<p style="margin:12px 0 0;padding:10px 12px;background:#f4f6f8;border-radius:8px;'
                    'font-size:11px;line-height:1.6;color:#63716b;">' + escape(notice) + '</p>') if notice else ""
     html = mail_shell(
+        ('<p style="padding:14px;background:#fff4e7;font-size:15px;line-height:1.8;color:#70491f;">'
+         + escape(data.welcome_notice) + '</p>' if data.welcome_notice else '') +
         '<p style="margin:0 0 4px;font-size:12px;line-height:1.5;color:#738091;">' +
         escape(day) + ' · 하루 한 번, 한눈에 읽는 브리핑</p>'
         '<h1 style="margin:0;font-size:30px;line-height:1.3;letter-spacing:-.5px;color:#192333;">오늘의 관심 뉴스</h1>'
@@ -382,6 +390,9 @@ def assemble_notice(data: NoNewsMailData | EndNoticeMailData):
                  "구독 기간은 기존 일정대로 유지됩니다."]
         content_kind = "no_news"
         management_label = "구독 관리"
+        if data.welcome_notice:
+            title = "뉴스 브리핑 구독이 완료됐어요"
+            lines = [data.welcome_notice, "현재 선택 분야의 새 기사를 찾지 못해 구독 완료 안내를 먼저 보내드립니다."]
     else:
         if data.subscription_status != "expired":
             raise ValueError("NATURAL_EXPIRY_REQUIRED")
@@ -399,6 +410,8 @@ def assemble_notice(data: NoNewsMailData | EndNoticeMailData):
         content_kind = "end_notice"
         management_label = "구독 관리·재구독"
     subject = f"[뉴스 브리핑] {day} · {title}"
+    if isinstance(data, NoNewsMailData) and data.welcome_notice:
+        subject = "[구독 완료] 첫 뉴스 브리핑 안내"
     plain = [title, "", *lines, "", management_label + " (웹사이트 로그인 필요): " + manage_url]
     if data.preview:
         plain.extend(["", PREVIEW_NOTICE])

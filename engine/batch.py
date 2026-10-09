@@ -20,9 +20,12 @@ COLLECTION_BUDGET = timedelta(minutes=15)  # P-06
 
 def create_jobs(deps, now, errors):
     """Backend 목록으로 작업을 만든다. 이미 있으면 기존 작업을 그대로 쓴다(고정 ID)."""
-    for method, mail_kind, error in (("list_due_subscriptions", "daily_briefing", "DUE_SUBSCRIPTIONS_UNAVAILABLE"),
+    methods = [("list_due_subscriptions", "daily_briefing", "DUE_SUBSCRIPTIONS_UNAVAILABLE"),
                                      ("list_expired_subscriptions", "subscription_end",
-                                      "EXPIRED_SUBSCRIPTIONS_UNAVAILABLE")):
+                                      "EXPIRED_SUBSCRIPTIONS_UNAVAILABLE")]
+    if hasattr(deps.gateway, "list_preview_subscriptions"):
+        methods.insert(0, ("list_preview_subscriptions", "subscription_preview", "PREVIEW_SUBSCRIPTIONS_UNAVAILABLE"))
+    for method, mail_kind, error in methods:
         try:
             snapshots = getattr(deps.gateway, method)(now)
         except Exception:

@@ -11,6 +11,28 @@ from backend.engine_api import KST, EngineService, instant
 
 
 class FrontendApiTests(unittest.TestCase):
+    def test_new_subscription_requests_one_preview_without_changing_regular_start(self):
+        settings = {"categories": ["it_science"], "keywords": [], "delivery_hour_kst": 8,
+                    "duration_days": 7, "consent_version": "v1"}
+        headers = {**self.headers, "Idempotency-Key": "preview-attempt"}
+        with patch("backend.main.dispatch_preview", return_value="accepted") as dispatch:
+            response = self.client.post("/subscriptions/save", headers=headers,
+                                        json={"plan": "basic", "engine_settings": settings})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["preview_dispatch_status"], "accepted")
+        sub = body["subscription"]
+        self.assertTrue(sub["preview_requested_at"])
+        self.assertEqual(sub["first_delivery_date"], (datetime.now(KST).date() + timedelta(days=1)).isoformat())
+        self.assertEqual(sub["preview_settings"]["categories"], ["it_science"])
+        dispatch.assert_called_once()
+        with patch("backend.main.dispatch_preview", side_effect=RuntimeError("dispatch unavailable")):
+            replay = self.client.post("/subscriptions/save", headers=headers,
+                                      json={"plan": "basic", "engine_settings": settings})
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual(replay.json()["subscription_id"], sub["subscription_id"])
+        self.assertEqual(replay.json()["preview_dispatch_status"], "failed")
+
     def setUp(self):
         self.env = patch.dict(os.environ, {"PUBLIC_CATEGORIES":"economy,it_science,politics,society,world,culture"})
         self.env.start(); self.addCleanup(self.env.stop)

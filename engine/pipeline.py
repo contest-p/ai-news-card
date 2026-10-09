@@ -82,6 +82,12 @@ def check_deadline(job: DeliveryJob, now: datetime):
         raise JobStop("skipped_late", "DEADLINE_PASSED")
 
 
+def latest_eligibility(job, deps, now):
+    if job.mail_kind == "subscription_preview":
+        return deps.gateway.check_preview_eligibility(job.subscription_id, now)
+    return deps.gateway.check_delivery_eligibility(job.subscription_id, now)
+
+
 def build_news_or_no_news(job, token, context, deps, now, issues, check_limits):
     snapshot = job.settings_snapshot
     history = deps.jobs.recent_history(job.user_id, since=job.scheduled_at - HISTORY_WINDOW)
@@ -94,6 +100,13 @@ def build_news_or_no_news(job, token, context, deps, now, issues, check_limits):
     common = dict(job_id=job.job_id, recipient_email=snapshot["recipient_email"],
                   sender_email=deps.sender_email, scheduled_date_kst=day, web_links=deps.web_links,
                   preview=False)
+    if job.mail_kind == "subscription_preview":
+        first = date.fromisoformat(snapshot["start_date"])
+        hour = snapshot["delivery_hour_kst"]
+        period, display_hour = ("오전", hour or 12) if hour < 12 else ("오후", hour - 12 or 12)
+        common["welcome_notice"] = (f"구독이 완료됐어요. {first:%Y년 %m월 %d일}부터 매일 "
+                                    f"{period} {display_hour}시에 이런 뉴스 브리핑을 보내드릴게요. "
+                                    "지금은 선택하신 관심 분야의 첫 미리보기를 보내드립니다.")
     if selected.status == "ineligible":
         raise JobStop("cancelled", "SNAPSHOT_NOT_ACTIVE")
     if selected.status == "no_candidates":
@@ -170,7 +183,7 @@ def process_job(job_id: str, *, context: DailyContext, deps: PipelineDeps, run_i
 
     try:
         check_limits()
-        stop_for_eligibility(job, deps.gateway.check_delivery_eligibility(job.subscription_id, deps.clock()))
+        stop_for_eligibility(job, latest_eligibility(job, deps, deps.clock()))
         check_limits()
         archived = deps.archive.load(job.job_id)
         check_limits()
@@ -194,7 +207,7 @@ def process_job(job_id: str, *, context: DailyContext, deps: PipelineDeps, run_i
         # SMTP 직전: 최신 해제·만료·삭제 요청과 발송 기한을 다시 확인한다.
         now = deps.clock()
         check_deadline(job, now)
-        stop_for_eligibility(job, deps.gateway.check_delivery_eligibility(job.subscription_id, now))
+        stop_for_eligibility(job, latest_eligibility(job, deps, now))
         check_limits()
         attempts = job.smtp_attempts + 1
         if attempts > SMTP_MAX_ATTEMPTS:
