@@ -54,6 +54,36 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(output["result"]["card_data"]["card1"]["sentences"][0]["numbers"][0]["surface"], "53")
         self.assertIn("NUMBER_SURFACE_UNIT_SEPARATED", output["format_review"]["changes"])
 
+    def test_number_order_and_units_are_derived_from_verified_text(self):
+        self.fixture.current_body("은행은 대출금리를 3.5%로 정하고 대출은 2건 승인했습니다.")
+        self.fixture.draft["card2"] = None
+        quote = self.fixture.current.article.body
+        sentence = self.fixture.draft["card1"]["sentences"][0]
+        sentence["numbers"] = [
+            {"surface": "2", "unit": "loans", "subject": "대출", "as_of": None,
+             "source_article_id": "current", "evidence_quote": quote},
+            {"surface": "3.5", "unit": "percent", "subject": "대출금리", "as_of": None,
+             "source_article_id": "current", "evidence_quote": quote},
+        ]
+        output = self.run_generation()
+        self.assertEqual(output["status"], "completed")
+        actual = output["result"]["card_data"]["card1"]["sentences"][0]
+        self.assertEqual(actual["text"], quote)
+        self.assertEqual([(n["surface"], n["unit"]) for n in actual["numbers"]], [("3.5", "%"), ("2", "건")])
+        self.assertEqual(self.calls, 1)
+
+    def test_number_repair_never_invents_amount_or_subject(self):
+        from engine.generation import repair_format
+        self.fixture.current_body("은행은 대출금리를 3.5%로 정했습니다.")
+        self.fixture.draft["card2"] = None
+        quote = self.fixture.current.article.body
+        sentence = self.fixture.draft["card1"]["sentences"][0]
+        for surface, subject in [("4.5", "대출금리"), ("3.5", "주택가격")]:
+            sentence["numbers"] = [{"surface": surface, "unit": "%", "subject": subject,
+                                     "as_of": None, "source_article_id": "current", "evidence_quote": quote}]
+            self.assertIsNone(repair_format(self.fixture.draft, self.fixture.current, self.fixture.rag,
+                                           self.fixture.publishers, self.fixture.day))
+
     def test_explicit_400_recovery_keeps_attempt_count_and_limit(self):
         class Failing:
             def complete(self, messages):
