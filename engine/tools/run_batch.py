@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 
 from engine.firestore_connection import create_client
 from engine.runtime import run_connected
@@ -13,6 +14,19 @@ def log_summary(result):
     """Only aggregate counts reach public Actions logs; detailed results stay local."""
     return {key: value for key, value in result.items() if key not in {"jobs", "run_id"}} | {
         "jobs": {key: value for key, value in result.get("jobs", {}).items() if key != "results"}}
+
+
+def parse_delivery_at(value, *, now=None):
+    """외부 예약은 오프셋이 있는 절대 시각을 전달한다. 늦게 실행되면 즉시 처리한다."""
+    if not value:
+        return None
+    target = datetime.fromisoformat(value)
+    if target.tzinfo is None or target.utcoffset() is None:
+        raise ValueError("DELIVERY_AT_TIMEZONE_REQUIRED")
+    remaining = (target - (now or datetime.now(timezone.utc))).total_seconds()
+    if remaining > 20 * 60:
+        raise ValueError("DELIVERY_AT_TOO_FAR_IN_FUTURE")
+    return target
 
 
 def main():
@@ -26,15 +40,17 @@ def main():
     group.add_argument("--run", action="store_true", help="전체 대상 기사·AI·DB·SMTP 배치 실행")
     parser.add_argument("--text-only", action="store_true")
     parser.add_argument("--safe-log", action="store_true", help="작업별 식별자·상세 결과 없이 집계만 출력")
+    parser.add_argument("--delivery-at", default="", help="대상 조회를 시작할 절대 시각(예: 2026-10-10T08:00:00+09:00)")
     args = parser.parse_args()
     client = None
     try:
+        delivery_at = parse_delivery_at(args.delivery_at)
         report = preflight(args.project, args.credentials, test=False)
         if args.check or report["missing_configuration"]:
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return 1 if report["missing_configuration"] else 0
         client = create_client(args.project, args.credentials)
-        result = run_connected(client, text_only=args.text_only)
+        result = run_connected(client, text_only=args.text_only, delivery_at=delivery_at)
         print(json.dumps(log_summary(result) if args.safe_log else result, ensure_ascii=False, indent=2))
         bad = {"failed", "unknown", "crashed", "claim_lost"}
         return int(bool(result["errors"]) or any(result["jobs"]["by_status"].get(s, 0) for s in bad))

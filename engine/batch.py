@@ -5,7 +5,7 @@ GitHub Actions 예약(UTC `7 * * * *`)이 이 함수를 호출한다. 실제 Bac
 """
 
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import time
@@ -45,7 +45,8 @@ def collection_summary(result) -> dict:
 
 
 def run_batch(*, deps: PipelineDeps, collect, run_id=None, privacy_cleanup=None,
-              monotonic=time.monotonic, budget=BATCH_BUDGET, collection_budget=COLLECTION_BUDGET) -> dict:
+              monotonic=time.monotonic, budget=BATCH_BUDGET, collection_budget=COLLECTION_BUDGET,
+              delivery_at: datetime | None = None, sleep=time.sleep) -> dict:
     """collect(deadline=monotonic 기준 종료 시각) → LiveCollectionResult 형태의 결과."""
     run_id = run_id or uuid.uuid4().hex
     started = monotonic()
@@ -60,6 +61,16 @@ def run_batch(*, deps: PipelineDeps, collect, run_id=None, privacy_cleanup=None,
         errors.append("COLLECTION_CRASHED")
         context = DailyContext([], False)
 
+    # 수집은 미리 진행하고, 지정된 절대 시각 이후에만 발송 대상을 조회한다.
+    # 이미 지난 목표 시각은 기다리지 않는다. 대기는 처리 예산에서 제외한다.
+    wait_started = monotonic()
+    if delivery_at is not None:
+        if delivery_at.tzinfo is None or delivery_at.utcoffset() is None:
+            raise ValueError("DELIVERY_AT_TIMEZONE_REQUIRED")
+        while (remaining := (delivery_at - deps.clock()).total_seconds()) > 0:
+            sleep(min(remaining, 30))
+    waited = monotonic() - wait_started
+    batch_deadline += waited
     create_jobs(deps, deps.clock(), errors)
     # 기한이 이른 작업부터 처리한다. 이전 실행에서 남은 pending·failed·멈춘 작업도 포함된다.
     jobs = sorted(deps.jobs.open_jobs(), key=lambda job: (job.deadline_at, job.job_id))
@@ -88,12 +99,13 @@ def run_batch(*, deps: PipelineDeps, collect, run_id=None, privacy_cleanup=None,
             errors.append("PRIVACY_CLEANUP_FAILED")
 
     duration = monotonic() - started
-    if duration >= budget.total_seconds():
+    if duration - waited >= budget.total_seconds():
         budget_exceeded = True
         errors.append("BATCH_BUDGET_EXCEEDED")
     return {
         "run_id": run_id, "started_at": started_at.isoformat(), "finished_at": deps.clock().isoformat(),
         "duration_seconds": round(duration, 3), "budget_exceeded": budget_exceeded,
+        "wait_seconds": round(waited, 3),
         "collection": collection_summary(collected),
         "jobs": {"total": len(jobs), "processed": len(reports), "unprocessed": unprocessed,
                  "by_status": dict(Counter(report["status"] for report in reports)),

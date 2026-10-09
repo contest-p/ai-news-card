@@ -49,6 +49,37 @@ def collected(*, succeeded=True):
 
 
 class BatchTests(unittest.TestCase):
+    def test_collects_before_target_then_queries_and_sends_after_target(self):
+        target = NOW
+        self.deps.clock.now = target - timedelta(minutes=10)
+        events = []
+        timer = Monotonic()
+        def collect_early(*, deadline):
+            events.append(("collect", self.deps.clock()))
+            return collected()
+        original_due = self.gateway.list_due_subscriptions
+        def due(now):
+            events.append(("due", now))
+            return original_due(now)
+        self.gateway.list_due_subscriptions = due
+        def advance(seconds):
+            self.assertLessEqual(seconds, 30)
+            self.deps.clock.now += timedelta(seconds=seconds)
+            timer.value += seconds
+        summary = run_batch(deps=self.deps, collect=collect_early, delivery_at=target,
+                            sleep=advance, monotonic=timer, budget=timedelta(minutes=1))
+        self.assertEqual(events, [("collect", target - timedelta(minutes=10)), ("due", target)])
+        self.assertEqual(summary["wait_seconds"], 600)
+        self.assertFalse(summary["budget_exceeded"])
+        self.assertEqual(summary["jobs"]["by_status"], {"sent": 1})
+
+    def test_late_start_does_not_wait_for_next_hour(self):
+        summary = run_batch(deps=self.deps, collect=self.collect,
+                            delivery_at=NOW - timedelta(minutes=5), monotonic=Monotonic(),
+                            sleep=lambda seconds: self.fail("늦은 실행은 대기하면 안 됨"))
+        self.assertEqual(summary["wait_seconds"], 0)
+        self.assertEqual(summary["jobs"]["by_status"], {"sent": 1})
+
     def setUp(self):
         self.gateway = BatchGateway()
         self.jobs = InMemoryJobStore()

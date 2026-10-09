@@ -34,6 +34,7 @@ def int_setting(name, default, minimum, maximum):
 
 def run_connected(client, *, gateway=None, sender=None, smtp=None, encoder=None,
                   text_only=False, test=False, jobs_wrapper=None,
+                  delivery_at=None,
                   clock=lambda: datetime.now(timezone.utc)):
     """Explicitly invoked by a CLI; test adapters retain recipient restrictions."""
     smtp = smtp or load_smtp_account()
@@ -113,7 +114,8 @@ def run_connected(client, *, gateway=None, sender=None, smtp=None, encoder=None,
         cleanup_stats["expired_archives_deleted"] = archive.delete_expired(now)
         # Backend remains responsible for user, subscription, feedback and Auth deletion.
         gateway.privacy_cleanup(now)
-    summary = run_batch(deps=deps, collect=collect, privacy_cleanup=None if test else cleanup)
+    summary = run_batch(deps=deps, collect=collect, privacy_cleanup=None if test else cleanup,
+                        delivery_at=delivery_at)
     summary.update(embedding=stats, cleanup=cleanup_stats, card_jobs_attempted=generated,
                    test_only=test, delivery_confirmed=False)
     write_summary(summary, render_root / "runs")

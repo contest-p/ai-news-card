@@ -11,9 +11,15 @@ on:
         type: choice
         default: check
         options: [check, run]
+      delivery_at:
+        description: '50~55분 외부 호출은 hourly(다음 정각). ISO 절대 시각도 가능. 빈 값은 즉시 실행'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: engine-mail-production
@@ -31,6 +37,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: 발송 목표 시각 고정
+        id: delivery_target
+        env:
+          DELIVERY_AT: ${{ inputs.delivery_at }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 engine/tools/delivery_target.py
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
@@ -86,6 +98,7 @@ jobs:
       - name: 운영 배치 실행
         if: github.event_name == 'schedule' || inputs.mode == 'run'
         env:
+          DELIVERY_AT: ${{ steps.delivery_target.outputs.delivery_at }}
           ENGINE_FIREBASE_PROJECT: ${{ vars.ENGINE_FIREBASE_PROJECT || 'ai-news-card' }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           ENGINE_API_BASE_URL: ${{ vars.ENGINE_API_BASE_URL }}
@@ -104,4 +117,4 @@ jobs:
           ENGINE_MAX_CARD_JOBS_PER_BATCH: ${{ vars.ENGINE_MAX_CARD_JOBS_PER_BATCH || '10' }}
           CARD_FONT_PATH: /usr/share/fonts/truetype/nanum/NanumGothic.ttf
           TOKENIZERS_PARALLELISM: 'false'
-        run: python -B -m engine.tools.run_batch --run --safe-log --project "$ENGINE_FIREBASE_PROJECT"
+        run: python -B -m engine.tools.run_batch --run --safe-log --project "$ENGINE_FIREBASE_PROJECT" --delivery-at "$DELIVERY_AT"
