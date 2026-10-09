@@ -22,6 +22,7 @@ let subscriptionAttempt = null;
 let setup = { categories: [], keywords: [], delivery_hour_kst: 9, duration_days: 14 };
 let draftSettings = null;
 let pendingNavigation = null;
+let logoutConfirmationOpen = false;
 let isMenuOpen = false;
 let savingSubscription = false;
 let loginPending = false;
@@ -94,6 +95,9 @@ function hasUnsavedSettings() {
 function unsavedSettingsModal() {
   return `<div class="modal-backdrop unsaved-settings-modal"><section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="unsaved-title" aria-describedby="unsaved-description"><h2 id="unsaved-title">저장하지 않은 변경사항이 있어요</h2><p id="unsaved-description">이 페이지를 나가면 수정 내용이 사라집니다. 나가시겠어요?</p><div class="modal-actions"><button class="btn btn-quiet" data-action="stay-settings">계속 수정</button><button class="btn btn-primary" data-action="discard-settings">변경사항 버리고 나가기</button></div></section></div>`;
 }
+function logoutConfirmationModal() {
+  return `<div class="modal-backdrop logout-confirmation-modal"><section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="logout-title" aria-describedby="logout-description"><h2 id="logout-title">정말 로그아웃하시겠어요?</h2><p id="logout-description">로그아웃하면 다시 서비스를 이용할 때 Google 계정으로 로그인해야 해요.</p><div class="modal-actions"><button class="btn btn-quiet" data-action="cancel-logout">계속 이용하기</button><button class="btn btn-outline" data-action="confirm-logout">로그아웃</button></div></section></div>`;
+}
 
 const firebaseAuth = createFirebaseAuth(CONFIG.firebase, (user) => {
   const previousUid = session?.user?.uid;
@@ -101,6 +105,7 @@ const firebaseAuth = createFirebaseAuth(CONFIG.firebase, (user) => {
   if (previousUid !== user?.uid) {
     document.querySelector(".modal-backdrop")?.remove();
     pendingNavigation = null;
+    logoutConfirmationOpen = false;
     cancelTarget = null; deletionRequest = null;
     currentSubscription = null;
     draftSettings = null;
@@ -224,6 +229,20 @@ function render(){let page=pageFromPath();if(deletionRequest && ["setup","comple
 function completePageContent(){return completePage();}
 
 function wire(){
+ if(logoutConfirmationOpen){
+  app.insertAdjacentHTML("beforeend",logoutConfirmationModal());
+  const dialog=app.querySelector(".logout-confirmation-modal");
+  dialog?.querySelector('[data-action="cancel-logout"]')?.focus();
+  dialog?.addEventListener("keydown",event=>{
+    if(event.key==="Escape"){event.preventDefault();void onAction("cancel-logout");}
+    if(event.key==="Tab"){
+      const controls=[...dialog.querySelectorAll("button:not(:disabled),a[href],input:not(:disabled)")];
+      const first=controls[0],last=controls[controls.length-1];
+      if(event.shiftKey && document.activeElement===first){event.preventDefault();last?.focus();}
+      if(!event.shiftKey && document.activeElement===last){event.preventDefault();first?.focus();}
+    }
+  });
+ }
  if(pendingNavigation){
   app.insertAdjacentHTML("beforeend",unsavedSettingsModal());
   const dialog=app.querySelector(".unsaved-settings-modal");
@@ -243,7 +262,7 @@ function wire(){
  document.querySelectorAll('input[name="reason"]').forEach(el=>el.addEventListener("change",()=>feedbackDraft.reasons=[...document.querySelectorAll('input[name="reason"]:checked')].map(input=>input.value)));
 document.querySelectorAll("[data-go]").forEach((el)=>el.addEventListener("click",(e)=>{e.preventDefault();go(el.dataset.go);}));document.querySelectorAll("[data-category]").forEach((el)=>el.addEventListener("click",()=>{const id=el.dataset.category;setup.categories=setup.categories.includes(id)?setup.categories.filter((x)=>x!==id):[...setup.categories,id];render();}));document.querySelectorAll("[data-duration]").forEach((el)=>el.addEventListener("click",()=>{setup.duration_days=Number(el.dataset.duration);render();}));document.querySelectorAll("[data-remove-keyword]").forEach((el)=>el.addEventListener("click",()=>{setup.keywords.splice(Number(el.dataset.removeKeyword),1);render();}));document.querySelectorAll("[data-manage-category]").forEach((el)=>el.addEventListener("click",()=>{const id=el.dataset.manageCategory;draftSettings.categories=draftSettings.categories.includes(id)?draftSettings.categories.filter((x)=>x!==id):[...draftSettings.categories,id];render();}));document.querySelectorAll("[data-remove-manage-keyword]").forEach((el)=>el.addEventListener("click",()=>{draftSettings.keywords.splice(Number(el.dataset.removeManageKeyword),1);render();}));document.querySelectorAll("[data-rating]").forEach((el)=>el.addEventListener("click",()=>chooseRating(el.dataset.rating)));document.querySelectorAll("[data-action]").forEach((el)=>el.addEventListener("click",()=>onAction(el.dataset.action)));document.querySelector("#consent")?.addEventListener("change",(e)=>{setup.consent=e.target.checked;setup.consented_version=e.target.checked?catalog.consent_version:null;const button=document.querySelector('[data-action="consent-next"]');if(button)button.disabled=!setup.consent || !catalog.consent_version;});document.querySelector("#delivery-hour")?.addEventListener("change",(e)=>setup.delivery_hour_kst=Number(e.target.value));document.querySelector("#manage-hour")?.addEventListener("change",(e)=>draftSettings.delivery_hour_kst=Number(e.target.value));}
 
-async function onAction(action){if(action==="stay-settings"){pendingNavigation=null;render();return;}if(action==="discard-settings"){const proceed=pendingNavigation;pendingNavigation=null;draftSettings=null;if(proceed)await proceed();else render();return;}if(action==="menu"){isMenuOpen=!isMenuOpen;render();return;}if(action==="start"){if(session){await refreshSubscription();await go(currentSubscription?.status==="active"?"/manage":"/privacy");return;}go("/login");return;}if(action==="auth"){if(session){if(hasUnsavedSettings()){pendingNavigation=()=>onAction("auth");render();return;}try{await firebaseAuth.signOut();session=null;currentSubscription=null;draftSettings=null;toast("로그아웃했어요.");await go("/");}catch{toast("로그아웃하지 못했습니다.");}}else go("/login");return;}if(action==="google-login"){
+async function onAction(action){if(action==="stay-settings"){pendingNavigation=null;render();return;}if(action==="discard-settings"){const proceed=pendingNavigation;pendingNavigation=null;draftSettings=null;if(proceed)await proceed();else render();return;}if(action==="menu"){isMenuOpen=!isMenuOpen;render();return;}if(action==="start"){if(session){await refreshSubscription();await go(currentSubscription?.status==="active"?"/manage":"/privacy");return;}go("/login");return;}if(action==="cancel-logout"){logoutConfirmationOpen=false;render();document.querySelector('[data-action="auth"]')?.focus();return;}if(action==="confirm-logout"){logoutConfirmationOpen=false;try{await firebaseAuth.signOut();session=null;currentSubscription=null;draftSettings=null;toast("로그아웃했어요.");await go("/");}catch{toast("로그아웃하지 못했습니다.");render();}return;}if(action==="auth"){if(session){if(hasUnsavedSettings()){pendingNavigation=()=>onAction("auth");render();return;}logoutConfirmationOpen=true;render();}else go("/login");return;}if(action==="google-login"){
   if(loginPending)return;
   loginPending=true;render();
   try {
