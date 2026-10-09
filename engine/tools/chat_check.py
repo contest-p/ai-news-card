@@ -2,7 +2,6 @@
 import json
 import os
 import sys
-from datetime import datetime, timezone
 
 from engine.chat_client import ChatFailure, CodysseyChatClient
 from engine.settings import load_chat_settings
@@ -62,11 +61,7 @@ def check_failed_job(settings):
         report = {"stage": "failed_job", "status": result.status, "issues": list(result.issues),
                   "message_submitted": False}
         if result.status != "ready_for_review":
-            from engine.cards import normalized, NUMBER, quantity_matches, repair_numeric_format
-            try:
-                corrected, _ = repair_numeric_format(draft, current)
-            except Exception:
-                corrected = draft
+            from engine.cards import NUMBER
             counts = {}
             for sentence in draft.get("card1", {}).get("sentences", []):
                 quote = sentence.get("evidence_quote", "")
