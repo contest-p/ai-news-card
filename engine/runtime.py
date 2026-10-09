@@ -59,11 +59,13 @@ def run_connected(client, *, gateway=None, sender=None, smtp=None, encoder=None,
         publisher_for=repository.publisher_for, client=CodysseyChatClient(chat), model=chat.model,
         base_url=chat.base_url, store=generation, search_evidence=rag, record_search=rag.record_search, record_usage=rag.record_usage)
     stats = {"ready": 0, "failed": 0, "reused": 0, "stale": 0}
-    generation_budget = int_setting("ENGINE_MAX_CARD_JOBS_PER_BATCH", 50, 1, 1000)
+    # Zero processes every due job within the existing 45-minute batch budget.
+    # A positive value remains an explicit operator-selected cost limit.
+    generation_budget = int_setting("ENGINE_MAX_CARD_JOBS_PER_BATCH", 0, 0, 1000)
     generated = 0
     def bounded_builder(job, article):
         nonlocal generated
-        if generated >= generation_budget:
+        if generation_budget and generated >= generation_budget:
             return CardOutcome("failed", None, True, "GENERATION_BATCH_LIMIT", None)
         generated += 1
         return builder(job, article)

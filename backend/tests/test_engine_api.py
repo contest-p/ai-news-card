@@ -193,6 +193,23 @@ class EngineApiTests(unittest.TestCase):
         self.assertTrue(self.service.eligibility("new-subscription",self.now)["eligible"])
         self.assertEqual(self.service.list_snapshots(self.now)["subscriptions"][0]["subscription_id"],"new-subscription")
 
+    def test_archived_expiry_is_suppressed_after_renewal_before_new_start(self):
+        now = instant(date(2026, 10, 15), 1)
+        self.db.data["subscription_history/old-subscription"] = {
+            **self.data, "subscription_id": "old-subscription", "snapshot_parent_id": "fixture-user"}
+        self.db.data["subscriptions/fixture-user"] = {
+            **self.data, "subscription_id": "new-subscription",
+            "start_date": "2026-10-16", "end_date_exclusive": "2026-10-23"}
+        # This is also the live eligibility check for already queued end notices.
+        self.assertEqual(self.service.eligibility("old-subscription", now),
+                         {"eligible": False, "reason": "not_found"})
+        self.db.data["subscriptions/fixture-user"]["status"] = "cancelled"
+        self.assertEqual(self.service.eligibility("old-subscription", now)["reason"], "expired")
+
+    def test_natural_expiry_without_renewal_remains_sendable_as_end_notice(self):
+        now = instant(date(2026, 10, 15), 1)
+        self.assertEqual(self.service.eligibility("fixture-user", now)["reason"], "expired")
+
     def test_due_query_only_freezes_the_requested_test_subscription(self):
         self.db.data["subscriptions/fixture-user"]["subscription_id"] = "chosen-test"
         self.db.data["subscriptions/another-user"] = {**self.data, "uid": "another-user",

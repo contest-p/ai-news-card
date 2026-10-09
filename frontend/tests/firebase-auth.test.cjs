@@ -47,6 +47,7 @@ test('API sends Firebase ID token only for protected routes; feedback stays anon
   const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(/init\(\);\s*$/, '');
   const context = {
+    location: { pathname: '/', hash: '', search: '' },
     window: { APP_CONFIG: { apiBaseUrl: 'https://api.example.test/api/v1', firebase: {} }, addEventListener() {} },
     document: { querySelector: () => ({}) },
     createFirebaseAuth: () => ({ getToken: async () => { tokenCalls++; return 'firebase-id-token'; } }),

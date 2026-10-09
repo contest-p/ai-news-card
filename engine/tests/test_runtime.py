@@ -64,6 +64,32 @@ class MemoryDB(FakeClient):
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_default_processes_more_than_ten_cards_and_explicit_cap_is_preserved(self):
+        from engine.pipeline import CardOutcome
+        outcome = CardOutcome("failed", None, False, "FIXTURE_FAILURE", None)
+        for cap, expected in ((None, 12), ("0", 12), ("2", 2)):
+            with self.subTest(cap=cap), tempfile.TemporaryDirectory() as output, ExitStack() as stack:
+                stack.enter_context(patch.dict("os.environ", {
+                    "ENGINE_WEB_BASE_URL": "https://news.example.com", "ENGINE_ARCHIVE_RETENTION_DAYS": "7"}))
+                import os
+                if cap is None:
+                    os.environ.pop("ENGINE_MAX_CARD_JOBS_PER_BATCH", None)
+                else:
+                    os.environ["ENGINE_MAX_CARD_JOBS_PER_BATCH"] = cap
+                stack.enter_context(patch("engine.runtime.ROOT", Path(output)))
+                stack.enter_context(patch("engine.runtime.load_chat_settings", return_value=SimpleNamespace(model="fixture", base_url="fixture")))
+                builder = stack.enter_context(patch("engine.runtime.GenerationCardBuilder"))
+                builder.return_value.return_value = outcome
+                def batch(**kwargs):
+                    results = [kwargs["deps"].build_cards(None, None) for _ in range(12)]
+                    self.assertEqual(sum(item.error_code == "GENERATION_BATCH_LIMIT" for item in results), 12 - expected)
+                    return {"run_id": "fixture"}
+                stack.enter_context(patch("engine.runtime.run_batch", side_effect=batch))
+                result = run_connected(MemoryDB(), gateway=Mock(), smtp=SimpleNamespace(sender="sender@example.com"),
+                                       encoder=TestEncoder(), text_only=True, clock=lambda: NOW)
+                self.assertEqual(result["card_jobs_attempted"], expected)
+                self.assertEqual(builder.return_value.call_count, expected)
+
     @patch("google.cloud.firestore.transactional", side_effect=fake_transactional)
     def test_full_assembly_sends_background_and_expiry_only_once_and_reports_cleanup_failure(self, transactional):
         db, encoder = MemoryDB(), TestEncoder()

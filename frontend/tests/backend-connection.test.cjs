@@ -235,7 +235,7 @@ test('saved settings show server pending date and normalized keywords',async()=>
   assert.equal(h.context.state().subscription.next_settings.effective_date,'2026-10-09');
   assert.equal(h.context.state().draftSettings,null);
   const html=h.context.actions.managePage();
-  assert.match(html,/부터 적용/);assert.match(html,/변경 저장하기/);
+  assert.match(html,/부터 적용/);assert.match(html,/변경사항 저장하기/);
   assert.equal(h.context.state().draftSettings.expected_settings_version,2);
 });
 

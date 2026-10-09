@@ -279,7 +279,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_end_notice_only_for_natural_expiry(self):
         snapshot = {**SNAPSHOT, "status": "expired", "start_date": "2026-10-11", "end_date_exclusive": "2026-10-18"}
-        for reason, expected in (("expired", "sent"), ("cancelled", "cancelled")):
+        for reason, expected in (("expired", "sent"), ("cancelled", "cancelled"), ("not_found", "cancelled")):
             with self.subTest(reason=reason):
                 self.setUp()
                 self.gateway.reason = reason

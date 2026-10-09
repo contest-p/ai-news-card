@@ -151,6 +151,16 @@ class EngineService:
         except (KeyError, ValueError, TypeError):
             return {"eligible": False, "reason": "not_found"}
         if now >= instant(end):
+            # An archived subscription must not announce expiry after renewal.
+            replacements = self.subscriptions.where(filter=FieldFilter("uid", "==", data["uid"]))
+            for row in replacements.stream(timeout=20):
+                current = row.to_dict()
+                if (current.get("subscription_id", row.id) != subscription_id
+                        and current.get("status") == "active" and not deleted(current)
+                        and not current.get("cancelled_at")):
+                    _, replacement_end = dates(current)
+                    if now < instant(replacement_end):
+                        return {"eligible": False, "reason": "not_found"}
             return {"eligible": False, "reason": "expired"}
         active = data.get("status") == "active" and (now >= instant(start) or (
             preview and isinstance(data.get("preview_requested_at"), datetime)

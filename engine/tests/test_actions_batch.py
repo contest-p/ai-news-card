@@ -3,12 +3,19 @@ import os
 from unittest.mock import patch
 from engine.tools.connected_batch import load_gateway
 import unittest
-from engine.tools.run_batch import log_summary, parse_delivery_at
+from engine.tools.run_batch import log_summary, parse_delivery_at, batch_exit_code
 from datetime import datetime, timezone, timedelta
 from engine.tools.delivery_target import resolve_target
 
 
 class ActionsBatchTests(unittest.TestCase):
+    def test_missed_deadline_fails_actions_even_without_batch_errors(self):
+        for status in ("skipped_late", "failed", "unknown", "crashed", "claim_lost"):
+            with self.subTest(status=status):
+                self.assertEqual(batch_exit_code({"errors": [], "jobs": {"by_status": {status: 1}}}), 1)
+        self.assertEqual(batch_exit_code({"errors": [], "jobs": {
+            "by_status": {"sent": 2, "cancelled": 1, "skipped": 1}}}), 0)
+
     def test_hourly_target_is_fixed_from_workflow_creation_even_across_midnight(self):
         self.assertEqual(resolve_target("hourly", "2026-10-09T22:50:00Z"),
                          "2026-10-09T23:00:00+00:00")
@@ -39,6 +46,20 @@ class ActionsBatchTests(unittest.TestCase):
         self.assertEqual(summary["jobs"]["by_status"]["unknown"],1)
         self.assertFalse(summary["delivery_confirmed"])
         self.assertEqual(len(source["jobs"]["results"]),1)
+
+    def test_public_log_counts_job_errors_without_exposing_job_details(self):
+        source = {"jobs": {"results": [
+            {"job_id": "PRIVATE_ID", "error_code": "CARD_GENERATION_FAILED", "issues": ["PRIVATE_DETAIL"]},
+            {"job_id": "PRIVATE_ID_2", "error_code": "CARD_GENERATION_FAILED"},
+            {"job_id": "PRIVATE_ID_3", "error_code": "RAG_RECORD_FAILED"},
+            {"job_id": "PRIVATE_ID_4", "error_code": None},
+        ]}}
+        summary = log_summary(source)
+        self.assertEqual(summary["jobs"]["error_counts"],
+                         {"CARD_GENERATION_FAILED": 2, "RAG_RECORD_FAILED": 1})
+        self.assertNotIn("PRIVATE", json.dumps(summary))
+        self.assertEqual(len(source["jobs"]["results"]), 4)
+        self.assertEqual(log_summary({})["jobs"]["error_counts"], {})
 
     def test_undersized_server_token_is_rejected_without_network(self):
         with patch.dict(os.environ, {"ENGINE_API_BASE_URL":"https://backend.example/api/v1/engine", "ENGINE_API_TOKEN":"short"}, clear=True):

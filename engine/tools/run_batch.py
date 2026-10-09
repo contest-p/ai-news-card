@@ -1,6 +1,7 @@
 """Run one complete engine batch. Deployment/scheduling is deliberately separate."""
 
 import argparse
+from collections import Counter
 import json
 import sys
 from datetime import datetime, timezone
@@ -12,8 +13,11 @@ from engine.tools.connected_batch import preflight
 
 def log_summary(result):
     """Only aggregate counts reach public Actions logs; detailed results stay local."""
+    jobs = result.get("jobs", {})
     return {key: value for key, value in result.items() if key not in {"jobs", "run_id"}} | {
-        "jobs": {key: value for key, value in result.get("jobs", {}).items() if key != "results"}}
+        "jobs": {key: value for key, value in jobs.items() if key != "results"} | {
+            "error_counts": dict(Counter(report["error_code"] for report in jobs.get("results", [])
+                                         if report.get("error_code")))}}
 
 
 def parse_delivery_at(value, *, now=None):
@@ -27,6 +31,11 @@ def parse_delivery_at(value, *, now=None):
     if remaining > 20 * 60:
         raise ValueError("DELIVERY_AT_TOO_FAR_IN_FUTURE")
     return target
+
+
+def batch_exit_code(result):
+    bad = {"failed", "unknown", "crashed", "claim_lost", "skipped_late"}
+    return int(bool(result["errors"]) or any(result["jobs"]["by_status"].get(s, 0) for s in bad))
 
 
 def main():
@@ -59,8 +68,7 @@ def main():
         result = run_connected(client, text_only=args.text_only, delivery_at=delivery_at,
                                preview_subscription_id=args.preview_subscription_id or None)
         print(json.dumps(log_summary(result) if args.safe_log else result, ensure_ascii=False, indent=2))
-        bad = {"failed", "unknown", "crashed", "claim_lost"}
-        return int(bool(result["errors"]) or any(result["jobs"]["by_status"].get(s, 0) for s in bad))
+        return batch_exit_code(result)
     except Exception as error:
         print(json.dumps({"status": "failed", "error_code": "ENGINE_BATCH_FAILED",
                           "error_type": type(error).__name__}))

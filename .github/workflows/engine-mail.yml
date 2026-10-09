@@ -120,7 +120,7 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           ENGINE_ARCHIVE_RETENTION_DAYS: ${{ vars.ENGINE_ARCHIVE_RETENTION_DAYS }}
-          ENGINE_MAX_CARD_JOBS_PER_BATCH: ${{ vars.ENGINE_MAX_CARD_JOBS_PER_BATCH || '10' }}
+          ENGINE_MAX_CARD_JOBS_PER_BATCH: ${{ vars.ENGINE_MAX_CARD_JOBS_PER_BATCH || '0' }}
           CARD_FONT_PATH: /usr/share/fonts/truetype/nanum/NanumGothic.ttf
           TOKENIZERS_PARALLELISM: 'false'
         run: python -B -m engine.tools.run_batch --run --safe-log --project "$ENGINE_FIREBASE_PROJECT" --delivery-at "$DELIVERY_AT" --preview-subscription-id "$PREVIEW_SUBSCRIPTION_ID"
