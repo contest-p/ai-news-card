@@ -21,6 +21,7 @@ let initialFeedbackRating = null;
 let subscriptionAttempt = null;
 let setup = { categories: [], keywords: [], delivery_hour_kst: 9, duration_days: 14 };
 let draftSettings = null;
+let pendingNavigation = null;
 let isMenuOpen = false;
 let savingSubscription = false;
 let loginPending = false;
@@ -57,6 +58,7 @@ const dateTimeKst = (value) => { const d=new Date(value); return Number.isNaN(d.
 const hourLabel = (hour) => `${Number(hour) < 12 ? "오전" : "오후"} ${Number(hour) % 12 || 12}시`;
 const currentPath = () => location.pathname.replace(/\/+$/, "") || "/";
 const pageFromPath = () => ({ "/": "home", "/login": "login", "/privacy": "privacy", "/subscribe": "setup", "/complete": "complete", "/manage": "manage", "/ended": "ended", "/feedback": "feedback", "/service": "service", "/account": "account" })[currentPath()] || "home";
+let lastKnownPath = currentPath();
 async function renderRoute() {
   const path = currentPath();
   if (pageFromPath() === "feedback") {
@@ -69,16 +71,36 @@ async function renderRoute() {
   if (["/privacy", "/subscribe"].includes(currentPath()) && currentSubscription?.status === "active") history.replaceState({}, "", "/manage");
   // 구독 관리로 진입했을 때 구독이 없으면 동의 화면부터 안내한다.
   if (currentPath() === "/manage" && session && !currentSubscription?.status) history.replaceState({}, "", "/privacy");
+  lastKnownPath = currentPath();
   if (currentPath() === path || ["/privacy", "/manage"].includes(currentPath())) render();
 }
-const go = async (path) => { if (currentPath() === "/feedback" && path !== "/feedback") { feedbackEpoch++; feedbackLoading=false; feedbackSaving=false; feedbackToken = null; feedbackValid = false; feedbackDraft = { reasons: [], comment: "" }; chosenRating = null; } history.pushState({}, "", path); isMenuOpen = false; pageError = ""; await renderRoute(); window.scrollTo(0, 0); };
+const go = async (path, { force = false } = {}) => {
+  if (!force && currentPath() !== path && hasUnsavedSettings()) {
+    pendingNavigation = () => go(path, { force: true });
+    render();
+    return;
+  }
+  if (currentPath() === "/feedback" && path !== "/feedback") { feedbackEpoch++; feedbackLoading=false; feedbackSaving=false; feedbackToken = null; feedbackValid = false; feedbackDraft = { reasons: [], comment: "" }; chosenRating = null; }
+  history.pushState({}, "", path); lastKnownPath = currentPath(); isMenuOpen = false; pageError = ""; await renderRoute(); window.scrollTo(0, 0);
+};
 const urlFor = (path) => path;
+function hasUnsavedSettings() {
+  const saved = currentSubscription?.next_settings || currentSubscription?.current_settings;
+  if (!draftSettings || !saved || currentSubscription?.status !== "active") return false;
+  return JSON.stringify(draftSettings.categories) !== JSON.stringify(saved.categories || [])
+    || JSON.stringify(draftSettings.keywords) !== JSON.stringify(saved.keywords || [])
+    || Number(draftSettings.delivery_hour_kst) !== Number(saved.delivery_hour_kst);
+}
+function unsavedSettingsModal() {
+  return `<div class="modal-backdrop unsaved-settings-modal"><section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="unsaved-title" aria-describedby="unsaved-description"><h2 id="unsaved-title">저장하지 않은 변경사항이 있어요</h2><p id="unsaved-description">이 페이지를 나가면 수정 내용이 사라집니다. 나가시겠어요?</p><div class="modal-actions"><button class="btn btn-quiet" data-action="stay-settings">계속 수정</button><button class="btn btn-primary" data-action="discard-settings">변경사항 버리고 나가기</button></div></section></div>`;
+}
 
 const firebaseAuth = createFirebaseAuth(CONFIG.firebase, (user) => {
   const previousUid = session?.user?.uid;
   session = user ? { user } : null;
   if (previousUid !== user?.uid) {
     document.querySelector(".modal-backdrop")?.remove();
+    pendingNavigation = null;
     cancelTarget = null; deletionRequest = null;
     currentSubscription = null;
     draftSettings = null;
@@ -173,7 +195,7 @@ function settingsEditor(sub) {
     const settings = sub.next_settings || sub.current_settings;
     draftSettings = { categories: [...(settings.categories || [])], keywords: [...(settings.keywords || [])], delivery_hour_kst: settings.delivery_hour_kst, expected_settings_version: sub.settings_version };
   }
-  return `<section class="manage-section"><h2 class="section-heading">다음 브리핑 설정 변경</h2><p class="form-help">저장한 설정은 다음 날 한국 시간부터 적용돼요. 구독 기간은 그대로 유지됩니다.</p><fieldset ${savingSettings ? "disabled" : ""}><legend>관심 분야</legend><div class="token-list">${catalog.categories.map(id => `<button class="choice ${draftSettings.categories.includes(id) ? "selected" : ""}" data-manage-category="${id}" aria-pressed="${draftSettings.categories.includes(id)}">${esc(categoryName(id))}</button>`).join("")}</div><label class="form-label" for="manage-keyword">관심 키워드 (최대 5개)</label><div class="keyword-row"><input class="field" id="manage-keyword" placeholder="키워드 입력"><button class="btn btn-outline" data-action="add-manage-keyword">추가</button></div><div class="chips">${draftSettings.keywords.map((word,i) => `<span class="chip">${esc(word)}<button data-remove-manage-keyword="${i}" aria-label="${esc(word)} 삭제">×</button></span>`).join("")}</div><label class="form-label" for="manage-hour">받는 시간 · 한국 시간</label><select class="select" id="manage-hour">${Array.from({length:24},(_,hour) => `<option value="${hour}" ${hour === draftSettings.delivery_hour_kst ? "selected" : ""}>${hourLabel(hour)}</option>`).join("")}</select><div class="hero-actions"><button class="btn btn-primary" data-action="save-settings" ${catalog.categories.length ? "" : "disabled"}>${savingSettings ? "저장 중…" : "변경 저장하기"}</button><button class="btn btn-quiet" data-action="reload-subscription">최신 설정 불러오기</button></div></fieldset></section>`;
+  return `<section class="manage-section"><h2 class="section-heading">다음 브리핑 설정 변경</h2><p class="form-help">저장한 설정은 다음 날 한국 시간부터 적용돼요. 구독 기간은 그대로 유지됩니다.</p><fieldset ${savingSettings ? "disabled" : ""}><legend>관심 분야</legend><div class="token-list">${catalog.categories.map(id => `<button class="choice ${draftSettings.categories.includes(id) ? "selected" : ""}" data-manage-category="${id}" aria-pressed="${draftSettings.categories.includes(id)}">${esc(categoryName(id))}</button>`).join("")}</div><label class="form-label" for="manage-keyword">관심 키워드 (최대 5개)</label><div class="keyword-row"><input class="field" id="manage-keyword" placeholder="키워드 입력"><button class="btn btn-outline" data-action="add-manage-keyword">추가</button></div><div class="chips">${draftSettings.keywords.map((word,i) => `<span class="chip">${esc(word)}<button data-remove-manage-keyword="${i}" aria-label="${esc(word)} 삭제">×</button></span>`).join("")}</div><label class="form-label" for="manage-hour">받는 시간 · 한국 시간</label><select class="select" id="manage-hour">${Array.from({length:24},(_,hour) => `<option value="${hour}" ${hour === draftSettings.delivery_hour_kst ? "selected" : ""}>${hourLabel(hour)}</option>`).join("")}</select><div class="hero-actions"><button class="btn btn-primary" data-action="save-settings" ${catalog.categories.length ? "" : "disabled"}>${savingSettings ? "저장 중…" : "변경사항 저장하기"}</button></div></fieldset></section>`;
 }
 function pendingSettings(sub) {
   const next = sub.next_settings;
@@ -202,12 +224,26 @@ function render(){let page=pageFromPath();if(deletionRequest && ["setup","comple
 function completePageContent(){return completePage();}
 
 function wire(){
+ if(pendingNavigation){
+  app.insertAdjacentHTML("beforeend",unsavedSettingsModal());
+  const dialog=app.querySelector(".unsaved-settings-modal");
+  dialog?.querySelector('[data-action="stay-settings"]')?.focus();
+  dialog?.addEventListener("keydown",event=>{
+    if(event.key==="Escape"){event.preventDefault();void onAction("stay-settings");}
+    if(event.key==="Tab"){
+      const controls=[...dialog.querySelectorAll("button:not(:disabled),a[href],input:not(:disabled)")];
+      const first=controls[0],last=controls[controls.length-1];
+      if(event.shiftKey && document.activeElement===first){event.preventDefault();last?.focus();}
+      if(!event.shiftKey && document.activeElement===last){event.preventDefault();first?.focus();}
+    }
+  });
+ }
  document.querySelector("#card-preview-kind")?.addEventListener("change",e=>{const preview=document.querySelector("#card-template-fixture");if(preview)preview.innerHTML=renderCardTemplate(e.target.value==="max"?cardTemplateMaxFixture:cardTemplateFixture);});
  document.querySelector("#feedback-comment")?.addEventListener("input",e=>feedbackDraft.comment=e.target.value);
  document.querySelectorAll('input[name="reason"]').forEach(el=>el.addEventListener("change",()=>feedbackDraft.reasons=[...document.querySelectorAll('input[name="reason"]:checked')].map(input=>input.value)));
 document.querySelectorAll("[data-go]").forEach((el)=>el.addEventListener("click",(e)=>{e.preventDefault();go(el.dataset.go);}));document.querySelectorAll("[data-category]").forEach((el)=>el.addEventListener("click",()=>{const id=el.dataset.category;setup.categories=setup.categories.includes(id)?setup.categories.filter((x)=>x!==id):[...setup.categories,id];render();}));document.querySelectorAll("[data-duration]").forEach((el)=>el.addEventListener("click",()=>{setup.duration_days=Number(el.dataset.duration);render();}));document.querySelectorAll("[data-remove-keyword]").forEach((el)=>el.addEventListener("click",()=>{setup.keywords.splice(Number(el.dataset.removeKeyword),1);render();}));document.querySelectorAll("[data-manage-category]").forEach((el)=>el.addEventListener("click",()=>{const id=el.dataset.manageCategory;draftSettings.categories=draftSettings.categories.includes(id)?draftSettings.categories.filter((x)=>x!==id):[...draftSettings.categories,id];render();}));document.querySelectorAll("[data-remove-manage-keyword]").forEach((el)=>el.addEventListener("click",()=>{draftSettings.keywords.splice(Number(el.dataset.removeManageKeyword),1);render();}));document.querySelectorAll("[data-rating]").forEach((el)=>el.addEventListener("click",()=>chooseRating(el.dataset.rating)));document.querySelectorAll("[data-action]").forEach((el)=>el.addEventListener("click",()=>onAction(el.dataset.action)));document.querySelector("#consent")?.addEventListener("change",(e)=>{setup.consent=e.target.checked;setup.consented_version=e.target.checked?catalog.consent_version:null;const button=document.querySelector('[data-action="consent-next"]');if(button)button.disabled=!setup.consent || !catalog.consent_version;});document.querySelector("#delivery-hour")?.addEventListener("change",(e)=>setup.delivery_hour_kst=Number(e.target.value));document.querySelector("#manage-hour")?.addEventListener("change",(e)=>draftSettings.delivery_hour_kst=Number(e.target.value));}
 
-async function onAction(action){if(action==="menu"){isMenuOpen=!isMenuOpen;render();return;}if(action==="start"){if(session){await refreshSubscription();await go(currentSubscription?.status==="active"?"/manage":"/privacy");return;}go("/login");return;}if(action==="auth"){if(session){try{await firebaseAuth.signOut();session=null;currentSubscription=null;draftSettings=null;toast("로그아웃했어요.");await go("/");}catch{toast("로그아웃하지 못했습니다.");}}else go("/login");return;}if(action==="google-login"){
+async function onAction(action){if(action==="stay-settings"){pendingNavigation=null;render();return;}if(action==="discard-settings"){const proceed=pendingNavigation;pendingNavigation=null;draftSettings=null;if(proceed)await proceed();else render();return;}if(action==="menu"){isMenuOpen=!isMenuOpen;render();return;}if(action==="start"){if(session){await refreshSubscription();await go(currentSubscription?.status==="active"?"/manage":"/privacy");return;}go("/login");return;}if(action==="auth"){if(session){if(hasUnsavedSettings()){pendingNavigation=()=>onAction("auth");render();return;}try{await firebaseAuth.signOut();session=null;currentSubscription=null;draftSettings=null;toast("로그아웃했어요.");await go("/");}catch{toast("로그아웃하지 못했습니다.");}}else go("/login");return;}if(action==="google-login"){
   if(loginPending)return;
   loginPending=true;render();
   try {
@@ -370,5 +406,18 @@ async function init(){
   await getSession();
   await renderRoute();
 }
-window.addEventListener("popstate",()=>{pageError="";if(currentPath()!=="/feedback"){feedbackEpoch++;feedbackLoading=false;feedbackSaving=false;feedbackToken=null;feedbackValid=false;feedbackDraft={reasons:[],comment:""};}void renderRoute();});
+window.addEventListener("popstate",()=>{
+  const destination=currentPath();
+  if(hasUnsavedSettings()){
+    history.pushState({},"",lastKnownPath);
+    pendingNavigation=()=>history.back();
+    render();
+    return;
+  }
+  lastKnownPath=destination;
+  pageError="";
+  if(destination!=="/feedback"){feedbackEpoch++;feedbackLoading=false;feedbackSaving=false;feedbackToken=null;feedbackValid=false;feedbackDraft={reasons:[],comment:""};}
+  void renderRoute();
+});
+window.addEventListener("beforeunload",event=>{if(hasUnsavedSettings()){event.preventDefault();event.returnValue="";}});
 init();
