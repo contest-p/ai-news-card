@@ -19,7 +19,10 @@ async function main() {
     await context.route('**/*', route => { requests.push(route.request().url()); return route.abort(); });
     const page = await context.newPage();
     await page.setContent(fs.readFileSync(htmlPath, 'utf8'), { waitUntil: 'load' });
-    await page.evaluate(async () => { await document.fonts.ready; });
+    await page.evaluate(async () => {
+      await document.fonts.load('31px CardKorean', '뉴스 브리핑');
+      await document.fonts.ready;
+    });
     const layout = await page.evaluate(() => {
       const card = document.querySelector('.news-template');
       const rect = card.getBoundingClientRect();
@@ -29,7 +32,8 @@ async function main() {
           || el.scrollWidth > el.clientWidth + 1;
       }).map(el => el.tagName + '.' + el.className);
       return { width: rect.width, height: Math.ceil(rect.height), overflow,
-        fontLoaded: document.fonts.check('31px CardKorean'),
+        fontLoaded: document.fonts.check('31px CardKorean', '뉴스 브리핑'),
+        fontFaces: [...document.fonts].map(face => ({family: face.family, status: face.status})),
         minimumTextPx: 2 * Math.min(...[...card.querySelectorAll('h1,p,a,.news-template-label,.news-template-ai')].map(el => parseFloat(getComputedStyle(el).fontSize))) };
     });
     if (layout.overflow.length || !layout.fontLoaded || requests.length) {
