@@ -8,6 +8,7 @@ def main():
     examples = json.loads((ROOT / "engine/samples/template-layouts.json").read_text("utf-8"))
     root = ROOT / ".engine-local/template-examples"
     font = resolve_font_path()
+    print("Font format:", font.read_bytes()[:4].hex(), "bytes:", font.stat().st_size)
     for example in examples:
         try:
             result = render_card_data(example["data"], root / example["name"], font_path=font)

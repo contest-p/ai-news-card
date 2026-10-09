@@ -18,6 +18,11 @@ async function main() {
     const requests = [];
     await context.route('**/*', route => { requests.push(route.request().url()); return route.abort(); });
     const page = await context.newPage();
+    page.on('console', message => {
+      const text = message.text();
+      if (text.startsWith('OTS parsing error:')) process.stderr.write(text + '\n');
+      if (text.startsWith('Failed to decode downloaded font:')) process.stderr.write('FONT_DECODE_FAILED\n');
+    });
     await page.setContent(fs.readFileSync(htmlPath, 'utf8'), { waitUntil: 'load' });
     await page.evaluate(async () => {
       await document.fonts.load('31px CardKorean', '뉴스 브리핑');
