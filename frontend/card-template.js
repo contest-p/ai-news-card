@@ -153,6 +153,22 @@ export const cardTemplateFixture = Object.freeze({
   ai_generated: true,
 });
 
+// Actual source-backed example for the public template preview.
+export const cardTemplateNewsExample = Object.freeze({
+  schema_version: "1.0",
+  article_id: "korea-briefing-148973203",
+  title: "복지부, 단수 정보 과다 입력 오류 확인",
+  published_at: "2026-10-08T00:00:00Z",
+  card1: { sentences: [
+    { text: "보건복지부는 2025년 복지사각지대 발굴 3회차 때 경기도의 한 시·군·구가 단수 정보를 직전 회차보다 9천여 건 과다 입력한 사실을 확인했다고 밝혔습니다.", source_article_id: "korea-briefing-148973203", evidence_quote: "경기도 소재 시군구 1곳에서 단수 정보를 전 회차 대비 9천여 건을 과다 입력하였습니다.", temporal_role: "current", numbers: [] },
+    { text: "정부는 위기가구를 단수 정보 하나가 아니라 47종의 위기정보를 종합해 선정한다고 설명했습니다. 이 중 단수 등 7종은 엑셀 자료 업로드 방식으로 수집됩니다.", source_article_id: "korea-briefing-148973203", evidence_quote: "단수, 단가스 등 7종은 ... 수기(엑셀 자료 업로드)로 자료를 입수하고 있습니다.", temporal_role: "current", numbers: [] },
+    { text: "복지부는 수기 자료 입력 과정의 오류를 예방하기 위해 이상 수치 검증 등 사전 모니터링을 강화하겠다고 밝혔습니다.", source_article_id: "korea-briefing-148973203", evidence_quote: "이상 수치 검증 등 사전 모니터링을 강화하겠습니다.", temporal_role: "current", numbers: [] },
+  ], terms: [] },
+  card2: null,
+  sources: [{ article_id: "korea-briefing-148973203", publisher: "대한민국 정책브리핑 · 보건복지부", url: "https://www.korea.kr/briefing/actuallyView.do?newsId=148973203", published_at: "2026-10-08T00:00:00Z" }],
+  ai_generated: true,
+});
+
 // Deliberately fills the PRD limits; synthetic copy, never presented as actual news.
 const repeated = (text, limit) => [...text.repeat(Math.ceil(limit / [...text].length))].slice(0, limit).join("");
 export const cardTemplateMaxFixture = {
