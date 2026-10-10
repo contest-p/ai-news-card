@@ -164,8 +164,13 @@ export const cardTemplateNewsExample = Object.freeze({
     { text: "정부는 위기가구를 단수 정보 하나가 아니라 47종의 위기정보를 종합해 선정한다고 설명했습니다. 이 중 단수 등 7종은 엑셀 자료 업로드 방식으로 수집됩니다.", source_article_id: "korea-briefing-148973203", evidence_quote: "단수, 단가스 등 7종은 ... 수기(엑셀 자료 업로드)로 자료를 입수하고 있습니다.", temporal_role: "current", numbers: [] },
     { text: "복지부는 수기 자료 입력 과정의 오류를 예방하기 위해 이상 수치 검증 등 사전 모니터링을 강화하겠다고 밝혔습니다.", source_article_id: "korea-briefing-148973203", evidence_quote: "이상 수치 검증 등 사전 모니터링을 강화하겠습니다.", temporal_role: "current", numbers: [] },
   ], terms: [] },
-  card2: null,
-  sources: [{ article_id: "korea-briefing-148973203", publisher: "대한민국 정책브리핑 · 보건복지부", url: "https://www.korea.kr/briefing/actuallyView.do?newsId=148973203", published_at: "2026-10-08T00:00:00Z" }],
+  card2: { sentences: [
+    { text: "보건복지부는 2014년 송파 세 모녀 사망사건 이후 복지 위기가구 발굴 정책을 추진했으며, 복지사각지대 발굴시스템을 2015년에 구축했다고 밝혔습니다.", source_article_id: "mohw-1480402", evidence_quote: "2014년 송파 세 모녀 사망사건 이후 ... 복지사각지대 발굴시스템 구축(’15)", temporal_role: "past", numbers: [] },
+  ], terms: [] },
+  sources: [
+    { article_id: "korea-briefing-148973203", publisher: "대한민국 정책브리핑 · 보건복지부", url: "https://www.korea.kr/briefing/actuallyView.do?newsId=148973203", published_at: "2026-10-08T00:00:00Z" },
+    { article_id: "mohw-1480402", publisher: "보건복지부", url: "https://www.mohw.go.kr/board.es?act=view&bid=0027&list_no=1480402&mid=a10503000000&nPage=1", published_at: "2024-02-26T00:00:00Z" },
+  ],
   ai_generated: true,
 });
 
