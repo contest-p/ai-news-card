@@ -11,11 +11,19 @@ from engine.chat_client import ChatFailure
 
 VERSION = "korean-card-translation-v1"
 DIGITS = re.compile(r"\d+(?:[,.]\d+)*")
+VALIDATION_CODES = frozenset({"TRANSLATION_COUNT_INVALID", "TRANSLATION_NOT_KOREAN",
+    "TRANSLATION_NUMBERS_CHANGED", "FIELDS_INVALID", "TEXT_INVALID", "CONTROL_CHARACTER",
+    "LENGTH_EXCEEDED"})
+
+
+def validation_code(error):
+    code = getattr(error, "code", str(error))
+    return code if code in VALIDATION_CODES else "TRANSLATION_INPUT_INVALID"
 
 
 class TranslationFailure(ValueError):
-    def __init__(self, code, retryable=False):
-        self.code, self.retryable = code, retryable
+    def __init__(self, code, retryable=False, issues=()):
+        self.code, self.retryable, self.issues = code, retryable, issues
         super().__init__(code)
 
 
@@ -75,7 +83,9 @@ def korean_card(data, *, source_key, client, store, model, base_url):
             except (ValueError, TypeError, KeyError):
                 raise TranslationFailure("CACHED_TRANSLATION_INVALID") from None
         if state["status"] in {"in_flight", "blocked"} or state["attempts"] >= 2:
-            raise TranslationFailure(state.get("error_code") or "TRANSLATION_INTERRUPTED")
+            raise TranslationFailure(state.get("error_code") or "TRANSLATION_INTERRUPTED",
+                                     issues=tuple(state.get("validation_issues", ())))
+        previous_issues = state.get("validation_issues", ())
         state.update(attempts=state["attempts"] + 1, status="in_flight", error_code=None)
         store.save(handle, state)
         payload = [{"text": target[field], "max_chars": maximum} for target, field, maximum in rows]
@@ -86,6 +96,11 @@ def korean_card(data, *, source_key, client, store, model, base_url):
             "고유명사는 한국어로 표기하고 필요한 약어만 유지하라. 기관명·용어 설명도 한국어로 번역하라. "
             '순서와 개수를 유지해 {"translations": ["한국어 번역", ...]} JSON만 출력하라.'},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
+        if previous_issues:
+            messages[0]["content"] += ("\n이전 번역의 검사 실패 항목: " +
+                json.dumps(previous_issues, ensure_ascii=False) +
+                "\n해당 항목을 바로잡아 다시 번역하라. 숫자는 원래 표기 그대로 유지하며 "
+                "문장별 길이와 번역 개수를 확인하라.")
         try:
             draft = client.complete(messages)
             output = apply_translation(data, draft)
@@ -93,13 +108,16 @@ def korean_card(data, *, source_key, client, store, model, base_url):
             retryable = exc.code in {"CHAT_HTTP_429", "CHAT_HTTP_500", "CHAT_HTTP_502",
                                     "CHAT_HTTP_503", "CHAT_HTTP_504", "CHAT_RESPONSE_INVALID",
                                     "CHAT_RESPONSE_EMPTY", "CHAT_DRAFT_JSON_INVALID"}
-            state.update(status="retryable" if retryable else "blocked", error_code=exc.code)
-        except (ValueError, TypeError, KeyError):
+            state.update(status="retryable" if retryable else "blocked", error_code=exc.code,
+                         validation_issues=[])
+        except (ValueError, TypeError, KeyError) as error:
             retryable = True
-            state.update(status="retryable", error_code="TRANSLATION_VALIDATION_FAILED")
+            state.update(status="retryable", error_code="TRANSLATION_VALIDATION_FAILED",
+                         validation_issues=[validation_code(error)])
         else:
-            state.update(status="completed", result=draft)
+            state.update(status="completed", result=draft, validation_issues=[])
             store.save(handle, state)
             return output, True
         store.save(handle, state)
-        raise TranslationFailure(state["error_code"], retryable and state["attempts"] < 2)
+        raise TranslationFailure(state["error_code"], retryable and state["attempts"] < 2,
+                                 tuple(state.get("validation_issues", ())))

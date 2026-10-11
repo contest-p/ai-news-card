@@ -65,7 +65,8 @@ class GenerationCardBuilder:
                 card_data, translated = korean_card(result["card_data"], source_key=output["generation_key"],
                     client=self.client, store=self.store, model=self.model, base_url=self.base_url)
             except TranslationFailure as exc:
-                return CardOutcome("failed", None, exc.retryable, exc.code, output["generation_key"], issues)
+                return CardOutcome("failed", None, exc.retryable, exc.code, output["generation_key"],
+                                   issues + tuple("TRANSLATION:" + code for code in exc.issues))
             except GenerationBusy:
                 return CardOutcome("failed", None, True, "TRANSLATION_BUSY", output["generation_key"], issues)
             if translated:

@@ -9,6 +9,16 @@ from datetime import datetime, timezone
 from engine.firestore_connection import create_client
 from engine.runtime import run_connected
 from engine.tools.connected_batch import preflight
+from engine.localization import VALIDATION_CODES
+
+SAFE_VALIDATION_ISSUES = frozenset("CARD1:" + code for code in (
+    "FIELDS_INVALID", "TEXT_INVALID", "CONTROL_CHARACTER", "LENGTH_EXCEEDED",
+    "SOURCE_NOT_ALLOWED", "QUOTE_NOT_IN_BODY", "AS_OF_INVALID", "AS_OF_NOT_EXPLICIT_IN_QUOTE",
+    "CARD_TYPE_INVALID", "TERMS_INVALID", "PARAPHRASE_REQUIRES_SEMANTIC_REVIEW",
+    "TEMPORAL_ROLE_INVALID", "NUMBERS_INVALID", "NUMBER_UNIT_INVALID", "NUMBER_EVIDENCE_MISMATCH",
+    "NUMBER_METADATA_MISSING_OR_EXTRA", "NUMBER_ORDER_OR_UNIT_MISMATCH", "DESCRIPTION_TOO_LONG",
+    "TERM_REQUIRES_REVIEW", "CURRENT_CONTENT_CHANGED", "INPUT_INVALID")) | frozenset(
+    "TRANSLATION:" + code for code in (*VALIDATION_CODES, "TRANSLATION_INPUT_INVALID"))
 
 
 def log_summary(result):
@@ -17,7 +27,10 @@ def log_summary(result):
     return {key: value for key, value in result.items() if key not in {"jobs", "run_id"}} | {
         "jobs": {key: value for key, value in jobs.items() if key != "results"} | {
             "error_counts": dict(Counter(report["error_code"] for report in jobs.get("results", [])
-                                         if report.get("error_code")))}}
+                                         if report.get("error_code"))),
+            "validation_issue_counts": dict(Counter(
+                issue for report in jobs.get("results", []) if report.get("status") == "failed"
+                for issue in report.get("issues", []) if issue in SAFE_VALIDATION_ISSUES))}}
 
 
 def parse_delivery_at(value, *, now=None):

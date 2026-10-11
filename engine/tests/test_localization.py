@@ -88,6 +88,35 @@ class LocalizationTests(unittest.TestCase):
         self.builder(self.job, ARTICLE)
         self.assertEqual(self.client.calls, 3)
 
+    def test_translation_retry_receives_persisted_reason_and_preserves_numbers(self):
+        data = self.builder(self.job, ARTICLE).card_data
+        data["title"] = "Hospital treated 12 people"
+        class Correcting:
+            calls = 0
+            def complete(client, messages):
+                client.calls += 1
+                if client.calls == 1:
+                    return {"translations": ["병원에서 13명을 치료했습니다"]}
+                self.assertIn("TRANSLATION_NUMBERS_CHANGED", messages[0]["content"])
+                return {"translations": ["병원에서 12명을 치료했습니다"]}
+        client = Correcting()
+        options = dict(source_key="retry-numeric", client=client, store=self.store,
+                       model="test", base_url="test")
+        with self.assertRaises(TranslationFailure) as failed:
+            korean_card(data, **options)
+        self.assertEqual(failed.exception.issues, ("TRANSLATION_NUMBERS_CHANGED",))
+        self.store = LocalGenerationStore(self.store.root)
+        options["store"] = self.store
+        output, _ = korean_card(data, **options)
+        self.assertEqual(output["title"], "병원에서 12명을 치료했습니다")
+        korean_card(data, **options)
+        self.assertEqual(client.calls, 2)
+
+    def test_builder_reports_specific_translation_validation_issue(self):
+        self.client.translation = {"translations": []}
+        outcome = self.builder(self.job, ARTICLE)
+        self.assertIn("TRANSLATION:TRANSLATION_COUNT_INVALID", outcome.issues)
+
     def test_numbers_cannot_be_changed_or_added_by_translation(self):
         data = self.builder(self.job, ARTICLE).card_data
         data["title"] = "Hospital treated 12 people"

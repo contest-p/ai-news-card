@@ -152,6 +152,20 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(self.calls, 2)
         self.assertFalse(third["api_called_this_run"])
 
+    def test_validation_retry_receives_failed_check_and_keeps_generation_key(self):
+        import copy
+        valid = copy.deepcopy(self.fixture.draft)
+        self.fixture.draft["card1"]["sentences"][0]["text"] = "원문에 없는 내용"
+        first = self.run_generation()
+        self.store = LocalGenerationStore(self.temporary.name)
+        class Correcting:
+            def complete(client, messages):
+                self.assertIn("CARD1:PARAPHRASE_REQUIRES_SEMANTIC_REVIEW", messages[0]["content"])
+                return valid
+        second = self.run_generation(Correcting())
+        self.assertEqual(second["generation_key"], first["generation_key"])
+        self.assertEqual((second["status"], second["attempts"]), ("completed", 2))
+
     def test_http_temporary_error_is_not_retried_within_one_run(self):
         class Failing:
             def complete(self, messages):

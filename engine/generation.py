@@ -99,10 +99,18 @@ def generate_cards(current, rag, *, publishers, work_date_kst: date, job_id, mod
                 or (state["status"] == "blocked" and not manual_retry) or state["attempts"] >= 2):
             return {**state, "api_called_this_run": False, "reused": state["status"] == "completed"}
         # 네트워크 요청 전에 영속 기록. 중단·불확실 상태는 자동 재호출하지 않는다.
+        request_messages = messages
+        if state.get("error_code") == "CARD_VALIDATION_FAILED":
+            issues = (state.get("result") or {}).get("issues", [])
+            request_messages = [
+                {**messages[0], "content": messages[0]["content"] +
+                 "\n이전 응답이 다음 검사를 통과하지 못했다: " + json.dumps(issues, ensure_ascii=False) +
+                 "\n이 항목을 바로잡아 새 JSON을 작성하라. 원문 발췌·근거·숫자·길이 규칙은 그대로 지켜라."},
+                *messages[1:]]
         state.update(attempts=state["attempts"] + 1, status="in_flight", error_code=None, error_hints=[])
         store.save(path, state)
         try:
-            draft = client.complete(messages)
+            draft = client.complete(request_messages)
             result = assemble_cards(draft, current, rag, publishers=publishers, work_date_kst=work_date_kst)
             if result.status != "ready_for_review":
                 repaired = repair_format(draft, current, rag, publishers, work_date_kst)
