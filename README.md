@@ -220,6 +220,8 @@ engine/.venv/Scripts/python.exe -m engine.tools.run_batch --run --safe-log --pro
 
 ## 검증 및 테스트
 
+최신 구현과 과거 점검의 차이, 작성자별 Git 커밋 통계·주요 변경 링크, 추가 운영 검증 절차는 [평가 보완 근거](docs/15_평가_보완_근거_2026-10-11.md)에 정리했습니다.
+
 2026-10-09 확인 결과:
 
 - 배포 프론트엔드와 주요 정적 파일 정상 응답; `app.js`, `firebase-auth.js`, `card-template.js`, `styles.css`는 로컬 코드와 일치
