@@ -246,4 +246,4 @@ engine/.venv/Scripts/python.exe -B -m unittest discover -s engine/tests -q
 - 백엔드 API: [AI News Card API](https://ai-news-card-nine.vercel.app)
 - API 문서: [Swagger UI](https://ai-news-card-nine.vercel.app/docs)
 - GitHub: [contest-p/ai-news-card](https://github.com/contest-p/ai-news-card)
-- 발표 자료: **나중에 작성 필요**
+- 발표 자료: [개인화 뉴스 브리핑 발표자료 (PDF)](output/pdf/ai-news-briefing-presentation-latest.pdf)

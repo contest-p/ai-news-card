@@ -1,5 +1,10 @@
 # 프로젝트 발표 자료
 
+- 최신 발표 PDF: [개인화 뉴스 브리핑 발표자료 열기](../../output/pdf/ai-news-briefing-presentation-latest.pdf)
+- 2026-10-11 사용자가 제공한 수정본으로 최신화했다. 아래 PowerPoint와 제작 기록은 이전 버전 기준이며, 최신 PDF의 편집 원본은 아니다.
+
+## 이전 버전 및 제작 기록
+
 - 발표 PDF: [PDF 열기](../../output/pdf/ai-news-briefing-presentation-v2.pdf)
 - 수정 가능한 원본: [PowerPoint 열기](ai-news-briefing-presentation-v2.pptx)
 - 15장, 16:9. 사용자 피드백(13장)과 개선 사항(14장)은 제목만 작성했다.
