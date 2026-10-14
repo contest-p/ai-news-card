@@ -12,7 +12,18 @@ RSS에서 수집한 기사로 핵심 카드를 생성하며, RAG로 찾은 과�
 
 문제 정의, 서비스 대상, AI 활용 방식, 기술적 접근과 프로젝트 진행 순서는 [프로젝트 기획서](docs/02_프로젝트_기획서_개인화_뉴스_브리핑.md)에서 확인할 수 있습니다.
 
-기능·비기능 요구사항과 AI 활용 기준은 [요구사항 정의서](REQUIREMENTS.md)에서 확인할 수 있습니다.
+기능·비기능 요구사항과 AI 활용 기준은 [요구사항 정의서](docs/REQUIREMENTS.md)에서 확인할 수 있습니다.
+
+## 제출 항목
+
+| 번호 | 필수 항목 | 확인 링크 |
+|---|---|---|
+| ① | 프로젝트 기획서 | [기획서](./docs/02_프로젝트_기획서_개인화_뉴스_브리핑.md) |
+| ② | 기능 요구 명세서 | [요구사항 정의서](./docs/REQUIREMENTS.md) |
+| ③ | 배포 URL | [서비스 접속](https://ai-news-card-frontend.vercel.app) |
+| ④ | GitHub 레포지토리 | [contest-p/ai-news-card](https://github.com/contest-p/ai-news-card) |
+| ⑤ | 사용자 피드백 기록 | [테스트 및 개선 기록](./docs/05_사용자_피드백_기록.md) |
+| ⑥ | 발표 자료(서면용) | [최신 발표 PDF](./docs/presentation/ai-news-briefing-presentation-latest.pdf) |
 
 ## 팀원 및 역할
 
@@ -240,11 +251,11 @@ engine/.venv/Scripts/python.exe -B -m unittest discover -s engine/tests -q
 
 ### 사용자 테스트 결과
 
-- 테스트 인원: 실제 사용자 5명(익명 표기: A, B, C, D, E)
-- 테스트 기간: 3일 이상
+- 테스트 인원: 실제 사용자 5명(익명 표기: 01~05)
+- 테스트 기간: 2026년 10월 7일부터 계속 진행 중. 10월 11일까지 서비스 이용과 메일 수신을 확인했으며, 간헐적 메일 미수신 시 수정
 - 이용 범위: 웹페이지에서 로그인 → 구독 신청 → 뉴스 브리핑 메일 3회 이상 수신
 
-주요 피드백과 반영 사항은 [발표자료](output/pdf/ai-news-briefing-presentation-latest.pdf) 14~15쪽에 정리했습니다. 아래는 참여자들의 의견을 취합한 내용입니다.
+참여자별 질문·응답과 반영 내용은 [사용자 피드백 기록](docs/05_사용자_피드백_기록.md)에, 발표용 요약은 [발표자료](docs/presentation/ai-news-briefing-presentation-latest.pdf) 14~15쪽에 정리했습니다. 아래는 참여자들의 의견을 취합한 내용입니다.
 
 | 구분 | 사용자 피드백 | 반영 사항 |
 |---|---|---|
@@ -260,4 +271,4 @@ engine/.venv/Scripts/python.exe -B -m unittest discover -s engine/tests -q
 - 백엔드 API: [AI News Card API](https://ai-news-card-nine.vercel.app)
 - API 문서: [Swagger UI](https://ai-news-card-nine.vercel.app/docs)
 - GitHub: [contest-p/ai-news-card](https://github.com/contest-p/ai-news-card)
-- 발표 자료: [개인화 뉴스 브리핑 발표자료 (PDF)](output/pdf/ai-news-briefing-presentation-latest.pdf)
+- 발표 자료: [개인화 뉴스 브리핑 발표자료 (PDF)](docs/presentation/ai-news-briefing-presentation-latest.pdf)
