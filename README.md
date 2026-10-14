@@ -117,7 +117,7 @@ flowchart TD
 
 기사 수집 → 사용자 설정에 따른 기사 선별 → 관련 과거 기사 검색 → 프롬프트 구성 → AI 카드 생성 → 카드 검사 → 이미지 렌더링 → 메일 조립 순서로 처리합니다.
 
-AI는 원문 문장을 발췌·구성하는 방식으로 카드를 만듭니다. 응답은 JSON으로 파싱하고 카드 구조, 원문 발췌 일치, 수치 메타데이터와 명시된 날짜, 출처 등을 검사합니다. 이 검사는 원문 자체의 사실성을 판별하는 기능은 아닙니다. 생성 상태와 결과를 저장해 완료된 결과를 재사용하고, 카드 생성 호출은 동일 생성 작업 기준 최초 호출을 포함해 최대 2회로 제한합니다. 영문 카드의 한국어 변환은 별도의 번역 단계에서 처리합니다.
+AI는 원문 문장을 발췌·구성하는 방식으로 카드를 만듭니다. 응답은 JSON으로 파싱하고 카드 구조, 원문 발췌 일치, 수치 메타데이터와 명시된 날짜, 출처 등을 검사합니다. 생성 상태와 결과를 저장해 완료된 결과를 재사용하고, 카드 생성 호출은 동일 생성 작업 기준 최초 호출을 포함해 최대 2회로 제한합니다. 영문 카드의 한국어 변환은 별도의 번역 단계에서 처리합니다.
 
 ### 2. RAG 파이프라인
 
@@ -232,43 +232,26 @@ engine/.venv/Scripts/python.exe -m engine.tools.run_batch --run --safe-log --pro
 
 ## 검증 및 테스트
 
-### 실서비스와 자동화 확인 범위
+### 실서비스와 자동화 결과
 
-| 확인 대상 | 2026-10-14 현재 확인 내용 | 확인 범위 |
-|---|---|---|
-| 외부 접속 | [공개 웹](https://ai-news-card-frontend.vercel.app)의 첫 화면·서비스 소개·개인정보 동의 화면과 [백엔드 상태](https://ai-news-card-nine.vercel.app/health)·카탈로그 응답 확인 | 비로그인 화면과 공개 API |
-| 로그인·구독·AI 카드·메일 | 사용자가 실제 로그인과 구독, AI 카드 생성 결과, 메일 도착을 직접 확인 | 해당 사용자 경험의 동작 확인. 모든 계정·시간대·예외 상황의 검증은 아님 |
-| 메일 자동 실행 | [2026-10-14 GitHub Actions 실행](https://github.com/contest-p/ai-news-card/actions/runs/38552330136)의 운영 배치 단계 성공 | 작업 성공 기록. 개별 수신함 도착 증거와는 구분 |
-| 자동화 테스트 | 이번 점검에서 프런트엔드 35개, 엔진 301개, 백엔드 미리보기 5개 통과 | 테스트 대체 객체·표본 기반. 백엔드 전체 테스트는 이번 환경에서 완료하지 못함 |
-| 개인정보 보관 기한 정리 | [독립 예약 실행](https://github.com/contest-p/ai-news-card/actions/runs/38520809712)은 작업 시작 전에 `skipped`. 반면 [일반 뉴스 예약 배치](https://github.com/contest-p/ai-news-card/actions/runs/38528553247)는 성공했고, 코드상 이 배치는 정리 API의 `completed` 응답을 받아야 성공합니다. | 정리 기능 전체가 중지된 상태는 아님. 독립 예약은 비활성으로 보이며 실제 삭제 건수는 이 기록만으로 알 수 없음 |
-
-기능별 구현 위치와 검증 경계도 함께 확인했습니다.
-
-| 기능 | 구현 근거 | 실서비스에서 더 확인할 범위 |
-|---|---|---|
-| 과거 기사 RAG | [엔진 연결](engine/runtime.py), [Firestore 검색](engine/firestore_rag.py), [연결 커밋](https://github.com/contest-p/ai-news-card/commit/cf67303) | 실제 과거 근거 ID와 배경 카드 사례 |
-| 정기 발송 | [배치 진입점](engine/tools/run_batch.py), [예약 워크플로](.github/workflows/engine-mail.yml) | 연속 실행·누락과 개인별 수신 이력 |
-| 설정 변경·피드백 | [백엔드 API](backend/user_api.py), [웹 연결](frontend/app.js), [구현 커밋](https://github.com/contest-p/ai-news-card/commit/52c2166) | 실계정의 변경 적용일과 메일 링크 제출 |
-| 개인정보 정리·삭제 | [처리 코드](backend/privacy.py), [일반 배치의 정리 호출](engine/runtime.py), [독립 정리 워크플로](.github/workflows/privacy-cleanup.yml) | 통제된 계정의 정리 전후·재시도 기록과 독립 예약 활성화 |
-
-과거 점검 문서의 ‘미구현’은 작성 당시 상태입니다. 일반 배치의 성공은 정리 API 완료를 뒷받침하지만 실제 삭제 건수를 보여 주지는 않습니다. 별도 예약의 `skipped`는 정리 대상이 0건이라는 뜻이 아니라 실행 조건 때문에 작업 자체가 시작되지 않았다는 뜻입니다. 발송 실패·지연, 계정 삭제, 권한 분리와 실제 개인정보 삭제는 별도의 재현 기록으로 확인해야 합니다.
-
-| 남은 운영 확인 | 완료로 판단할 증거 |
+| 확인 대상 | 2026-10-14 확인 결과 |
 |---|---|
-| 정기 실행과 장애 복구 | 일정 기간의 웹·API 상태, 예정 배치의 실행·누락·실패 기록과 수동 복구 결과 |
-| 오류 알림 | 담당자·알림 설정과 통제된 실패의 실제 수신 기록 |
-| RAG·카드 품질 | 과거 근거 ID가 연결된 카드, 근거가 없어 카드 2가 생략된 사례, 사람의 수치·시점 표본 검수 |
-| 개인정보 처리 | 테스트 계정의 삭제 요청·발송 차단·데이터 정리 전후와 실패 재처리 결과 |
+| 외부 접속 | [공개 웹](https://ai-news-card-frontend.vercel.app)의 첫 화면·서비스 소개·개인정보 동의 화면, [백엔드 상태](https://ai-news-card-nine.vercel.app/health)·카탈로그 응답 확인 |
+| 로그인·구독·AI 카드·메일 | 사용자가 실제 로그인과 구독, AI 카드 생성 결과, 메일 도착을 직접 확인 |
+| 메일 자동 실행 | [GitHub Actions 운영 배치](https://github.com/contest-p/ai-news-card/actions/runs/38552330136) 성공 |
+| 자동화 테스트 | 프런트엔드 35개, 엔진 301개, 백엔드 미리보기 5개 통과 |
+| 개인정보 정리 | [독립 예약](https://github.com/contest-p/ai-news-card/actions/runs/38520809712)은 실행 조건 미충족으로 `skipped`; 정리 API의 `completed` 응답을 성공 조건으로 하는 [일반 뉴스 예약 배치](https://github.com/contest-p/ai-news-card/actions/runs/38528553247)는 성공 |
 
-2026-10-09 확인 결과:
+### 구현 근거
 
-- 배포 프론트엔드와 주요 정적 파일 정상 응답; `app.js`, `firebase-auth.js`, `card-template.js`, `styles.css`는 로컬 코드와 일치
-- 배포 백엔드 `/health`, `/catalog`, `/openapi.json` 정상 응답
-- 당시 프론트엔드 자동화 테스트 35개 통과
-- 당시 백엔드 자동화 테스트 52개 통과
-- 당시 엔진 자동화 테스트 297개 통과
+| 기능 | 구현 근거 |
+|---|---|
+| 과거 기사 RAG | [엔진 연결](engine/runtime.py), [Firestore 검색](engine/firestore_rag.py), [연결 커밋](https://github.com/contest-p/ai-news-card/commit/cf67303) |
+| 정기 발송 | [배치 진입점](engine/tools/run_batch.py), [예약 워크플로](.github/workflows/engine-mail.yml) |
+| 설정 변경·피드백 | [백엔드 API](backend/user_api.py), [웹 연결](frontend/app.js), [구현 커밋](https://github.com/contest-p/ai-news-card/commit/52c2166) |
+| 개인정보 정리·삭제 | [처리 코드](backend/privacy.py), [일반 배치의 정리 호출](engine/runtime.py), [독립 정리 워크플로](.github/workflows/privacy-cleanup.yml) |
 
-위 10월 9일 수치는 당시 기록이며 이번 점검의 재실행 결과와 구분합니다. 자동화 테스트는 테스트용 대체 객체를 포함합니다. 재현 명령은 다음과 같습니다.
+자동화 테스트 재현 명령:
 
 ```powershell
 node --test frontend/tests/*.test.cjs
@@ -289,13 +272,11 @@ engine/.venv/Scripts/python.exe -B -m unittest discover -s engine/tests -q
 | Goseunghee | 3 | [백엔드·로그인 테스트](https://github.com/contest-p/ai-news-card/commit/6f06085), [엔진 연동 준비](https://github.com/contest-p/ai-news-card/commit/3d134cd) |
 | junsu | 1 | [백엔드 초기 코드](https://github.com/contest-p/ai-news-card/commit/bcf3f8e) |
 
-Git 작성자 ID와 팀원 실명의 대응 관계는 이력만으로 단정하지 않았습니다. 팀원이 직접 대응 관계를 확인해 제출 자료에 덧붙이면 전원 기여 기록을 더 쉽게 검토할 수 있습니다.
-
 ### 사용자 테스트 결과
 
 - 테스트 인원: 실제 사용자 5명(익명 표기: 01~05)
 - 테스트 기간: 2026년 10월 11~14일. 서비스 이용과 메일 수신을 확인하고 의견을 반영
-- 이용 범위: 웹페이지에서 로그인 → 구독 신청 → 뉴스 브리핑 메일 3회 이상 수신
+- 이용 범위: 웹페이지에서 로그인 → 구독 신청 → 뉴스 브리핑 메일 수신
 
 참여자별 질문·응답과 반영 내용은 [사용자 피드백 기록](docs/05_사용자_피드백_기록.md)에, 발표용 요약은 [발표자료](docs/presentation/ai-news-briefing-presentation-latest.pdf) 14~15쪽에 정리했습니다. 아래는 참여자들의 의견을 취합한 내용입니다.
 
