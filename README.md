@@ -227,28 +227,69 @@ engine/.venv/Scripts/python.exe -m engine.tools.run_batch --run --safe-log --pro
 - 프론트엔드: `frontend/vercel.json`의 빌드 명령으로 `dist/`를 생성합니다. 빌드 환경변수 `BACKEND_API_URL`에 백엔드 HTTPS 주소를 지정합니다.
 - 백엔드: `backend/pyproject.toml`에서 Python 3.12와 `main:app` 진입점을 지정합니다.
 - 뉴스 메일: [engine-mail.yml](.github/workflows/engine-mail.yml)에 매시간 실행 일정과 수동 진단·발송 모드가 있습니다. 예약 실행 조건은 `ENGINE_SCHEDULE_ENABLED=true`입니다.
-- 개인정보 정리: [privacy-cleanup.yml](.github/workflows/privacy-cleanup.yml)에 별도 일정이 있으며, 예약 실행 조건은 `ENGINE_PRIVACY_ENABLED=true`입니다.
+- 개인정보 정리: 일반 뉴스 배치도 미리보기 작업을 제외하고 정리 API를 호출합니다. [privacy-cleanup.yml](.github/workflows/privacy-cleanup.yml)의 독립 예약은 `ENGINE_PRIVACY_ENABLED=true`일 때 별도로 실행됩니다.
 - 배치의 서버 인증 정보는 GitHub Actions의 `engine-production` 환경에서 설정합니다.
 
 ## 검증 및 테스트
 
-최신 구현과 과거 점검의 차이, 작성자별 Git 커밋 통계·주요 변경 링크, 추가 운영 검증 절차는 [평가 보완 근거](project-notes/15_평가_보완_근거_2026-10-11.md)에 정리했습니다.
+### 실서비스와 자동화 확인 범위
+
+| 확인 대상 | 2026-10-14 현재 확인 내용 | 확인 범위 |
+|---|---|---|
+| 외부 접속 | [공개 웹](https://ai-news-card-frontend.vercel.app)의 첫 화면·서비스 소개·개인정보 동의 화면과 [백엔드 상태](https://ai-news-card-nine.vercel.app/health)·카탈로그 응답 확인 | 비로그인 화면과 공개 API |
+| 로그인·구독·AI 카드·메일 | 사용자가 실제 로그인과 구독, AI 카드 생성 결과, 메일 도착을 직접 확인 | 해당 사용자 경험의 동작 확인. 모든 계정·시간대·예외 상황의 검증은 아님 |
+| 메일 자동 실행 | [2026-10-14 GitHub Actions 실행](https://github.com/contest-p/ai-news-card/actions/runs/38552330136)의 운영 배치 단계 성공 | 작업 성공 기록. 개별 수신함 도착 증거와는 구분 |
+| 자동화 테스트 | 이번 점검에서 프런트엔드 35개, 엔진 301개, 백엔드 미리보기 5개 통과 | 테스트 대체 객체·표본 기반. 백엔드 전체 테스트는 이번 환경에서 완료하지 못함 |
+| 개인정보 보관 기한 정리 | [독립 예약 실행](https://github.com/contest-p/ai-news-card/actions/runs/38520809712)은 작업 시작 전에 `skipped`. 반면 [일반 뉴스 예약 배치](https://github.com/contest-p/ai-news-card/actions/runs/38528553247)는 성공했고, 코드상 이 배치는 정리 API의 `completed` 응답을 받아야 성공합니다. | 정리 기능 전체가 중지된 상태는 아님. 독립 예약은 비활성으로 보이며 실제 삭제 건수는 이 기록만으로 알 수 없음 |
+
+기능별 구현 위치와 검증 경계도 함께 확인했습니다.
+
+| 기능 | 구현 근거 | 실서비스에서 더 확인할 범위 |
+|---|---|---|
+| 과거 기사 RAG | [엔진 연결](engine/runtime.py), [Firestore 검색](engine/firestore_rag.py), [연결 커밋](https://github.com/contest-p/ai-news-card/commit/cf67303) | 실제 과거 근거 ID와 배경 카드 사례 |
+| 정기 발송 | [배치 진입점](engine/tools/run_batch.py), [예약 워크플로](.github/workflows/engine-mail.yml) | 연속 실행·누락과 개인별 수신 이력 |
+| 설정 변경·피드백 | [백엔드 API](backend/user_api.py), [웹 연결](frontend/app.js), [구현 커밋](https://github.com/contest-p/ai-news-card/commit/52c2166) | 실계정의 변경 적용일과 메일 링크 제출 |
+| 개인정보 정리·삭제 | [처리 코드](backend/privacy.py), [일반 배치의 정리 호출](engine/runtime.py), [독립 정리 워크플로](.github/workflows/privacy-cleanup.yml) | 통제된 계정의 정리 전후·재시도 기록과 독립 예약 활성화 |
+
+과거 점검 문서의 ‘미구현’은 작성 당시 상태입니다. 일반 배치의 성공은 정리 API 완료를 뒷받침하지만 실제 삭제 건수를 보여 주지는 않습니다. 별도 예약의 `skipped`는 정리 대상이 0건이라는 뜻이 아니라 실행 조건 때문에 작업 자체가 시작되지 않았다는 뜻입니다. 발송 실패·지연, 계정 삭제, 권한 분리와 실제 개인정보 삭제는 별도의 재현 기록으로 확인해야 합니다.
+
+| 남은 운영 확인 | 완료로 판단할 증거 |
+|---|---|
+| 정기 실행과 장애 복구 | 일정 기간의 웹·API 상태, 예정 배치의 실행·누락·실패 기록과 수동 복구 결과 |
+| 오류 알림 | 담당자·알림 설정과 통제된 실패의 실제 수신 기록 |
+| RAG·카드 품질 | 과거 근거 ID가 연결된 카드, 근거가 없어 카드 2가 생략된 사례, 사람의 수치·시점 표본 검수 |
+| 개인정보 처리 | 테스트 계정의 삭제 요청·발송 차단·데이터 정리 전후와 실패 재처리 결과 |
 
 2026-10-09 확인 결과:
 
 - 배포 프론트엔드와 주요 정적 파일 정상 응답; `app.js`, `firebase-auth.js`, `card-template.js`, `styles.css`는 로컬 코드와 일치
 - 배포 백엔드 `/health`, `/catalog`, `/openapi.json` 정상 응답
-- 기존 프론트엔드 자동화 테스트 35개 통과
-- 기존 백엔드 자동화 테스트 52개 통과
-- 기존 엔진 자동화 테스트 297개 통과
+- 당시 프론트엔드 자동화 테스트 35개 통과
+- 당시 백엔드 자동화 테스트 52개 통과
+- 당시 엔진 자동화 테스트 297개 통과
 
-위 자동화 테스트는 테스트용 대체 객체를 포함한 코드 검증 결과입니다. 테스트 실행 명령은 다음과 같습니다.
+위 10월 9일 수치는 당시 기록이며 이번 점검의 재실행 결과와 구분합니다. 자동화 테스트는 테스트용 대체 객체를 포함합니다. 재현 명령은 다음과 같습니다.
 
 ```powershell
 node --test frontend/tests/*.test.cjs
 backend/.venv/Scripts/python.exe -B -m unittest discover -s backend/tests -q
 engine/.venv/Scripts/python.exe -B -m unittest discover -s engine/tests -q
 ```
+
+### Git 기여 근거
+
+[팀원별 역할](#팀원-및-역할)과 Git 작성자별 변경 기록을 함께 제시합니다. 2026-10-14 로컬 `main`의 `4d91cfa`까지 병합을 제외한 `git shortlog -sn --no-merges HEAD` 결과입니다.
+
+| Git 작성자 | 커밋 수 | 확인할 수 있는 변경 |
+|---|---:|---|
+| contest-p | 49 | [RAG·운영 배치](https://github.com/contest-p/ai-news-card/commit/cf67303), [백엔드 피드백·개인정보 처리](https://github.com/contest-p/ai-news-card/commit/52c2166) |
+| 040611bluesky-creator | 13 | [로그아웃 확인창](https://github.com/contest-p/ai-news-card/commit/33d50a9), [뉴스 예시](https://github.com/contest-p/ai-news-card/commit/922beb2) |
+| 박경연 | 6 | [엔진·메일 구조](https://github.com/contest-p/ai-news-card/commit/1e5b89a), [발송·배치](https://github.com/contest-p/ai-news-card/commit/366b079) |
+| jmyd051027 | 4 | [RSS 검사 스크립트](https://github.com/contest-p/ai-news-card/commit/d5ed111), [검증 결과](https://github.com/contest-p/ai-news-card/commit/8f6c72b) |
+| Goseunghee | 3 | [백엔드·로그인 테스트](https://github.com/contest-p/ai-news-card/commit/6f06085), [엔진 연동 준비](https://github.com/contest-p/ai-news-card/commit/3d134cd) |
+| junsu | 1 | [백엔드 초기 코드](https://github.com/contest-p/ai-news-card/commit/bcf3f8e) |
+
+Git 작성자 ID와 팀원 실명의 대응 관계는 이력만으로 단정하지 않았습니다. 팀원이 직접 대응 관계를 확인해 제출 자료에 덧붙이면 전원 기여 기록을 더 쉽게 검토할 수 있습니다.
 
 ### 사용자 테스트 결과
 
