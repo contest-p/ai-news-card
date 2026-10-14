@@ -1,6 +1,6 @@
 # 프로젝트 발표 자료
 
-- 최신 발표 PDF: [개인화 뉴스 브리핑 발표자료 열기](ai-news-briefing-presentation-latest.pdf)
+- 최신 발표 PDF: [개인화 뉴스 브리핑 발표자료 열기](../../docs/presentation/ai-news-briefing-presentation-latest.pdf)
 - 2026-10-11 사용자가 제공한 수정본으로 최신화했다. 아래 PowerPoint와 제작 기록은 이전 버전 기준이며, 최신 PDF의 편집 원본은 아니다.
 
 ## 이전 버전 및 제작 기록
@@ -13,7 +13,7 @@
 
 | 슬라이드 | 내용 | 근거 |
 |---|---|---|
-| 1~3 | 서비스 정의, 구축·운영 부담, 이용 흐름 | 사용자 기획 의도, 프로젝트 기획서, ../REQUIREMENTS.md |
+| 1~3 | 서비스 정의, 구축·운영 부담, 이용 흐름 | 사용자 기획 의도, 프로젝트 기획서, ../../docs/REQUIREMENTS.md |
 | 4~5 | 배포 화면, 로그인 동선, 가상 카드 미리보기 | 2026-10-10 배포 사이트 직접 방문·캡처 |
 | 6 | 실제 이메일 수신 화면 | 사용자가 제공한 Gmail 메일 직접 확인·본문 캡처 |
 | 7~9 | 처리 과정, AI 생성·검사, E5·Firestore RAG | engine/runtime.py, card_builder.py, cards.py, localization.py, embeddings.py, firestore_rag.py |

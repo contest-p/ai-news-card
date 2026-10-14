@@ -143,7 +143,8 @@ ai-news-card/
 ├── engine/             # 수집·선별·임베딩·카드 생성·렌더링·SMTP 배치
 ├── deployment-qa/      # RSS 소스 목록과 검증 도구
 ├── .github/workflows/  # 뉴스 메일 배치와 개인정보 보관 기한 정리
-└── docs/               # 프로젝트 문서
+├── docs/               # 제출용 기획서·요구 명세서·피드백 기록·발표 PDF
+└── project-notes/      # 개인 PRD·구현/QA 기록·이전 발표본과 근거 이미지
 ```
 
 ## 실행 방법
@@ -231,7 +232,7 @@ engine/.venv/Scripts/python.exe -m engine.tools.run_batch --run --safe-log --pro
 
 ## 검증 및 테스트
 
-최신 구현과 과거 점검의 차이, 작성자별 Git 커밋 통계·주요 변경 링크, 추가 운영 검증 절차는 [평가 보완 근거](docs/15_평가_보완_근거_2026-10-11.md)에 정리했습니다.
+최신 구현과 과거 점검의 차이, 작성자별 Git 커밋 통계·주요 변경 링크, 추가 운영 검증 절차는 [평가 보완 근거](project-notes/15_평가_보완_근거_2026-10-11.md)에 정리했습니다.
 
 2026-10-09 확인 결과:
 

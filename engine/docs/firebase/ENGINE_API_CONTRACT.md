@@ -60,4 +60,4 @@ engine_mail_archives다. DB 구조·인덱스·권한·보관 정책은 백엔�
 `POST /privacy-cleanup`은 `{"now": offset 포함 현재 ISO 8601 시각}`과 서버 Bearer 인증을 받는다.
 완료 시 `{"status":"completed", ...}`를 반환하고 부분 실패·처리량 한도 초과는 오류로 반환한다.
 발송 여부와 관계없이 `engine.tools.privacy_cleanup`에서 호출할 수 있다. AI·SMTP 설정을 요구하지 않는다.
-실행 방법과 예약 적용 범위는 [연결 보완 기록](../../../docs/10_연결_보완_2026-10-08.md)을 참고한다.
+실행 방법과 예약 적용 범위는 [연결 보완 기록](../../../project-notes/10_연결_보완_2026-10-08.md)을 참고한다.
