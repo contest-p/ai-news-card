@@ -61,6 +61,23 @@ class MailAssemblyTests(unittest.TestCase):
         self.assertIn(self.data["card1"]["sentences"][0]["text"], html)
         self.assertEqual(len(list(message.iter_attachments())), 0)
 
+    def test_rejected_optional_term_does_not_appear_in_deliverable_mail(self):
+        fixture = test_cards.CardTests()
+        fixture.setUp()
+        fixture.draft["card1"]["terms"] = [{
+            "term": "없는 용어", "definition": "은행은", "source_article_id": "current",
+            "evidence_quote": fixture.current.article.body}]
+        result = fixture.result()
+        self.assertEqual(result.status, "ready_for_review")
+        self.data = result.card_data
+        message = self.mail()
+        plain = message.get_body(preferencelist=("plain",)).get_content()
+        html = message.get_body(preferencelist=("html",)).get_content()
+        self.assertIn(fixture.current.article.body, plain)
+        self.assertIn(fixture.current.article.body, html)
+        self.assertNotIn("없는 용어", plain + html)
+        self.assertNotIn("기사 속 용어", html)
+
     def test_branded_real_mail_uses_validated_copy_and_hides_preview_label(self):
         self.data["card1"]["terms"] = [{"term": "가상 용어", "definition": "검증용 풀이입니다.",
                                          "source_article_id": self.data["article_id"],

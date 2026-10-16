@@ -175,7 +175,55 @@ class CardTests(unittest.TestCase):
         self.draft["card1"]["terms"].append(term)
         self.assertEqual(self.result().status, "failed")
         self.draft["card1"]["terms"] = [{**term, "definition": "가" * 101}]
-        self.assertEqual(self.result().status, "failed")
+        result = self.result()
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.card_data["card1"]["terms"], [])
+        self.assertIn("TERM_OMITTED:LENGTH_EXCEEDED", result.issues)
+
+    def test_invalid_optional_term_is_removed_without_changing_valid_term_or_body(self):
+        event = "은행은 대출금리를 정했습니다."
+        definition = "대출금리는 대출에 적용되는 금리입니다."
+        self.current_body(event + " " + definition)
+        self.draft["card1"]["sentences"][0].update(text=event, evidence_quote=event)
+        valid = {"term": "대출금리", "definition": definition,
+                 "source_article_id": "current", "evidence_quote": definition}
+        invalid = {**valid, "term": "없는 용어"}
+        self.draft["card1"]["terms"] = [invalid, valid]
+        before = copy.deepcopy(self.draft)
+        result = self.result()
+        self.assertEqual(result.status, "ready_for_review")
+        self.assertEqual(result.card_data["card1"]["sentences"], before["card1"]["sentences"])
+        self.assertEqual(result.card_data["card1"]["terms"], [valid])
+        self.assertIn("TERM_OMITTED:TERM_REQUIRES_REVIEW", result.issues)
+        self.assertEqual(self.draft, before)
+
+    def test_optional_term_omission_does_not_approve_invalid_body(self):
+        self.draft["card1"]["terms"] = [{"term": "없는 용어", "definition": "없는 풀이",
+                                         "source_article_id": "current", "evidence_quote": self.current.article.body}]
+        self.draft["card1"]["sentences"][0]["text"] = "기사에 없는 핵심 내용"
+        result = self.result()
+        self.assertEqual(result.status, "failed")
+        self.assertIsNone(result.card_data)
+        self.assertIn("CARD1:PARAPHRASE_REQUIRES_SEMANTIC_REVIEW", result.issues)
+
+    def test_each_unsupported_term_evidence_is_omitted(self):
+        event = "은행은 대출금리를 정했습니다."
+        definition = "대출금리는 대출에 적용되는 금리입니다."
+        numeric_definition = "대출금리는 3년 동안 적용되는 금리입니다."
+        self.current_body(" ".join((event, definition, numeric_definition)))
+        self.draft["card1"]["sentences"][0].update(text=event, evidence_quote=event)
+        valid = {"term": "대출금리", "definition": definition,
+                 "source_article_id": "current", "evidence_quote": definition}
+        for term in ({**valid, "definition": "기사에 없는 풀이"},
+                     {**valid, "definition": numeric_definition, "evidence_quote": numeric_definition},
+                     {**valid, "evidence_quote": "기사에 없는 인용"},
+                     {"term": "대출금리"}):
+            with self.subTest(term=term):
+                self.draft["card1"]["terms"] = [term]
+                result = self.result()
+                self.assertEqual(result.status, "ready_for_review")
+                self.assertEqual(result.card_data["card1"]["terms"], [])
+                self.assertEqual(result.card_data["card1"]["sentences"][0]["text"], event)
 
     def test_missing_publisher_fails_without_trusting_generated_name(self):
         self.publishers.pop("past")

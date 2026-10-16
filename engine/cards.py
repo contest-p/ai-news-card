@@ -17,7 +17,7 @@ DATE = re.compile(r"\d{4}-\d{1,2}-\d{1,2}|\d{4}\.\s?\d{1,2}\.\s?\d{1,2}\.?"
                   r"|(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일|\d{4}년\s*\d{1,2}월")
 TERM_NAME_MAX_CHARS = 20  # 프런트 card-template.js와 같은 값. 김현서와 최종 합의 필요.
 UNIT = re.compile(r"(?:%p|%|억원|만원|만명|억명|명|원|개|건|회|배|년|월|일|시간|분|초)")
-REVIEW_VALIDATOR_VERSION = "extractive-review-v4-definition-dedup"
+REVIEW_VALIDATOR_VERSION = "extractive-review-v5-optional-term-omission"
 # 문장 전체의 의미 판정이 아닌, 명백한 접속형 종결을 거르는 품질 제안.
 INCOMPLETE_TERM_END = re.compile(r"(?:하므로|이므로|으므로|하지만|했지만|하며|으며|하는데|했는데|하고|해서)$")
 
@@ -128,6 +128,14 @@ def fact_date(value, quote):
         raise CardInvalid("AS_OF_NOT_EXPLICIT_IN_QUOTE")
 
 
+def validate_term(term, sources):
+    fields(term, ("term", "definition", "source_article_id", "evidence_quote"))
+    name, definition = string(term["term"]), string(term["definition"], 100)
+    _, quote = evidence(term, sources)
+    if name not in quote or definition not in quote or NUMBER.search(definition):
+        raise CardInvalid("TERM_REQUIRES_REVIEW")
+
+
 def validate_card(card, sources, current_id, *, background):
     fields(card, ("sentences", "terms"))
     sentences, terms = card["sentences"], card["terms"]
@@ -181,11 +189,7 @@ def validate_card(card, sources, current_id, *, background):
     if background and not uses_past:
         raise CardInvalid("BACKGROUND_WITHOUT_PAST_EVIDENCE")
     for term in terms:
-        fields(term, ("term", "definition", "source_article_id", "evidence_quote"))
-        name, definition = string(term["term"]), string(term["definition"], 100)
-        _, quote = evidence(term, sources)
-        if name not in quote or definition not in quote or NUMBER.search(definition):
-            raise CardInvalid("TERM_REQUIRES_REVIEW")
+        validate_term(term, sources)
 
 
 def assemble_cards(draft, current: StoredArticle, rag: RagResult, *, publishers: dict[str, str],
@@ -209,6 +213,17 @@ def assemble_cards(draft, current: StoredArticle, rag: RagResult, *, publishers:
                     issues.append("TERM_OMITTED:NAME_TOO_LONG")
                 else:
                     kept.append(term)
+            # 용어 풀이는 선택 항목이다. 잘못된 용어만 제외하고 카드 전체를 다시 검증한다.
+            if len(kept) <= 2:
+                valid = []
+                for term in kept:
+                    try:
+                        validate_term(term, current_sources)
+                    except CardInvalid as exc:
+                        issues.append("TERM_OMITTED:" + exc.code)
+                    else:
+                        valid.append(term)
+                kept = valid
             draft["card1"]["terms"] = kept
         validate_card(draft["card1"], current_sources, article.article_id, background=False)
         retained = []
